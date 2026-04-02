@@ -1,0 +1,160 @@
+/* PCKT — Design tokens
+ * Aesthetic: Modern minimalist crypto, premium & understated.
+ * Palette: deep crimson + gold foil accents on warm-neutral paper/ink.
+ * Direction B ("Foil on Paper") — light is default here.
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  /* Core ink/paper — warm neutrals */
+  --ink-0:   #0b0907;
+  --ink-1:   #14110e;
+  --ink-2:   #1c1814;
+  --ink-3:   #2a2520;
+  --ink-4:   #3a342d;
+  --ink-5:   #6a6158;
+  --ink-6:   #9a9288;
+  --ink-7:   #c4bdb3;
+  --ink-8:   #e8e3db;
+  --ink-9:   #f5f1ea;
+  --ink-10:  #fbf8f2;
+
+  /* Crimson */
+  --crimson-50:  #fdf2f2;
+  --crimson-100: #f9dcdc;
+  --crimson-200: #f0a9a9;
+  --crimson-300: #e26e6e;
+  --crimson-400: #c73b3b;
+  --crimson-500: #a11b20;
+  --crimson-600: #7e1418;
+  --crimson-700: #5a0d10;
+  --crimson-800: #3b080a;
+  --crimson-900: #220406;
+
+  /* Gold foil */
+  --gold-100: #f5e8c6;
+  --gold-200: #e8d199;
+  --gold-300: #d4b46a;
+  --gold-400: #b8923d;
+  --gold-500: #8a6b24;
+  --gold-600: #5c4615;
+
+  /* System */
+  --ok:   #4a8a5c;
+  --warn: #c69436;
+  --err:  #b33a3a;
+
+  --r-1: 2px;  --r-2: 4px;  --r-3: 8px;  --r-4: 12px;  --r-5: 18px;  --r-pill: 999px;
+
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px;
+  --s-7: 32px; --s-8: 40px; --s-9: 56px; --s-10: 72px; --s-11: 96px; --s-12: 128px;
+
+  --sh-1: 0 1px 0 rgba(0,0,0,.06);
+  --sh-2: 0 1px 2px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.04);
+  --sh-3: 0 6px 20px rgba(0,0,0,.08), 0 2px 6px rgba(0,0,0,.05);
+  --sh-4: 0 20px 60px rgba(0,0,0,.18), 0 6px 16px rgba(0,0,0,.08);
+  --sh-glow-crimson: 0 0 0 1px rgba(161,27,32,.25), 0 10px 40px rgba(161,27,32,.25);
+  --sh-glow-gold: 0 0 0 1px rgba(184,146,61,.3), 0 10px 40px rgba(184,146,61,.18);
+
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-serif: "Instrument Serif", "Times New Roman", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --ease-out: cubic-bezier(.2,.7,.3,1);
+  --ease-in-out: cubic-bezier(.65,0,.35,1);
+  --dur-1: 120ms;  --dur-2: 200ms;  --dur-3: 360ms;
+}
+
+/* LIGHT — default (Foil on Paper) */
+:root, .theme-light {
+  --bg:            var(--ink-10);
+  --bg-elev:       #ffffff;
+  --bg-elev-2:     var(--ink-9);
+  --bg-elev-3:     var(--ink-8);
+  --border:        rgba(20,17,14,.08);
+  --border-strong: rgba(20,17,14,.16);
+  --fg:            var(--ink-1);
+  --fg-dim:        var(--ink-3);
+  --fg-muted:      var(--ink-5);
+  --fg-quiet:      var(--ink-6);
+  --accent:        var(--crimson-600);
+  --accent-weak:   rgba(126,20,24,.08);
+  --accent-hov:    var(--crimson-500);
+  --foil:          var(--gold-500);
+  --foil-deep:     var(--gold-400);
+  --selection:     rgba(184,146,61,.25);
+  color-scheme: light;
+}
+
+/* DARK — for packets + hero flash cards */
+.theme-dark {
+  --bg:            var(--ink-0);
+  --bg-elev:       var(--ink-1);
+  --bg-elev-2:     var(--ink-2);
+  --bg-elev-3:     var(--ink-3);
+  --border:        rgba(255,255,255,.08);
+  --border-strong: rgba(255,255,255,.16);
+  --fg:            var(--ink-10);
+  --fg-dim:        var(--ink-7);
+  --fg-muted:      var(--ink-6);
+  --fg-quiet:      var(--ink-5);
+  --accent:        var(--crimson-500);
+  --accent-weak:   rgba(161,27,32,.18);
+  --accent-hov:    var(--crimson-400);
+  --foil:          var(--gold-300);
+  --foil-deep:     var(--gold-400);
+  --selection:     rgba(212,180,106,.25);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; height: 100%; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
+}
+::selection { background: var(--selection); color: var(--fg); }
+
+.t-display { font-family: var(--font-serif); font-weight: 400; letter-spacing: -0.02em; line-height: 0.95; }
+.t-eyebrow { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-muted); }
+.t-mono    { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.t-num     { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+.foil-text {
+  background: linear-gradient(100deg, #d4b46a 0%, #f5e8c6 32%, #b8923d 52%, #f5e8c6 72%, #8a6b24 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  background-size: 200% 100%;
+}
+
+.paper-grain {
+  background-image:
+    radial-gradient(rgba(90,70,21,.04) 1px, transparent 1.2px),
+    radial-gradient(rgba(0,0,0,.03) 1px, transparent 1px);
+  background-size: 4px 4px, 9px 9px;
+  background-position: 0 0, 1px 2px;
+}
+.theme-dark .paper-grain {
+  background-image:
+    radial-gradient(rgba(212,180,106,.04) 1px, transparent 1.2px),
+    radial-gradient(rgba(255,255,255,.025) 1px, transparent 1px);
+}
+
+.hairline    { border: 1px solid var(--border); }
+.hairline-b  { border-bottom: 1px solid var(--border); }
+.hairline-t  { border-top: 1px solid var(--border); }
+
+.screen::-webkit-scrollbar { display: none; }
+.screen { scrollbar-width: none; }
+
+@keyframes pckt-pulse { 0%,100% { opacity: 1 } 50% { opacity: .5 } }
+@keyframes pckt-foil-shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+.pckt-shimmer { animation: pckt-foil-shimmer 6s linear infinite; }
+@keyframes pckt-float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+@keyframes pckt-fade-up { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+.pckt-fade-up { animation: pckt-fade-up .5s var(--ease-out) both; }
