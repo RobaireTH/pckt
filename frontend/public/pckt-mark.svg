@@ -1,0 +1,26 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="pk_light" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E8B04A"></stop>
+      <stop offset="1" stop-color="#B88630"></stop>
+    </linearGradient>
+    <linearGradient id="pk_mid" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#C41F26"></stop>
+      <stop offset="1" stop-color="#8B1419"></stop>
+    </linearGradient>
+    <linearGradient id="pk_shadow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6a0e12"></stop>
+      <stop offset="1" stop-color="#3d0709"></stop>
+    </linearGradient>
+  </defs>
+  
+  
+  <path d="M 40 100 L 100 40 L 100 160 Z" fill="url(#pk_light)"></path>
+  
+  <path d="M 100 40 L 160 100 L 100 160 Z" fill="url(#pk_mid)"></path>
+  
+  <path d="M 100 40 L 100 160 L 130 100 Z" fill="url(#pk_shadow)" opacity=".55"></path>
+  
+  <path d="M 100 40 L 100 160" stroke="#FBF5E6" stroke-width="1.5" opacity=".55"></path>
+</svg>
