@@ -1,4 +1,4 @@
-use pckt_backend::run;
+use pckt_backend::{config::Config, run};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -11,9 +11,6 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let port: u16 = std::env::var("PORT")
-        .unwrap_or_else(|_| "8080".into())
-        .parse()
-        .expect("PORT");
-    run(port).await
+    let config = Config::from_env()?;
+    run(config).await
 }
