@@ -1,4 +1,5 @@
 pub mod config;
+pub mod db;
 pub mod error;
 pub mod state;
 
@@ -9,14 +10,20 @@ use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
-use crate::config::Config;
+use crate::{config::Config, state::AppState};
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
+    let pool = db::connect(&config.database_url).await?;
+    db::migrate(&pool).await?;
+
+    let state = AppState::new(pool, config);
+
     let app = axum::Router::new()
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive());
+        .layer(CorsLayer::permissive())
+        .with_state(state.clone());
 
-    let addr: SocketAddr = ([0, 0, 0, 0], config.port).into();
+    let addr: SocketAddr = ([0, 0, 0, 0], state.config.port).into();
     let listener = TcpListener::bind(addr)
         .await
         .with_context(|| format!("bind {addr}"))?;
