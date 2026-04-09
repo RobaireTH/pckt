@@ -1,6 +1,7 @@
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod routes;
 pub mod state;
 
 use std::net::SocketAddr;
@@ -18,7 +19,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     let state = AppState::new(pool, config);
 
-    let app = axum::Router::new()
+    let app = routes::router()
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
         .with_state(state.clone());
