@@ -1,7 +1,9 @@
+mod events;
 mod healthz;
 mod links;
 mod packets;
 mod prices;
+mod relay;
 
 use axum::{
     routing::{get, post},
@@ -19,5 +21,7 @@ pub fn router() -> Router<AppState> {
         .route("/v1/packets/by-pubkey/:hash", get(packets::by_pubkey))
         .route("/v1/links", post(links::create))
         .route("/l/:slug", get(links::redirect))
+        .route("/v1/relay/tx", post(relay::submit))
         .route("/v1/prices/ckb", get(prices::ckb))
+        .route("/v1/events/stream", get(events::stream))
 }
