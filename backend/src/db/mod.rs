@@ -1,3 +1,5 @@
+pub mod cursor;
+
 use std::str::FromStr;
 
 use anyhow::Context;
