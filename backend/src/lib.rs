@@ -2,6 +2,7 @@ pub mod ckb;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod indexer;
 pub mod routes;
 pub mod state;
 
@@ -12,13 +13,16 @@ use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
-use crate::{config::Config, state::AppState};
+use crate::{config::Config, indexer::Indexer, state::AppState};
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
     let pool = db::connect(&config.database_url).await?;
     db::migrate(&pool).await?;
 
     let state = AppState::new(pool, config);
+
+    let indexer = Indexer::new(state.clone());
+    tokio::spawn(async move { indexer.run().await });
 
     let app = routes::router()
         .layer(TraceLayer::new_for_http())
