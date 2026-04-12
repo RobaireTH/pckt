@@ -1,3 +1,4 @@
+pub mod blocks;
 pub mod cursor;
 
 use std::str::FromStr;
