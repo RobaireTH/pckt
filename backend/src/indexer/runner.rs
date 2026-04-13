@@ -1,10 +1,16 @@
 use std::time::Duration;
 
 use anyhow::Context;
+use pckt_types::PacketState;
 use serde_json::Value;
 use tracing::{debug, info, warn};
 
-use crate::{ckb::CkbRpc, db, state::AppState};
+use crate::{
+    ckb::CkbRpc,
+    crypto::{decode_hex, hex_str},
+    db::{self, packets::PacketRow},
+    state::AppState,
+};
 
 const TICK_INTERVAL_SECS: u64 = 30;
 const SCAN_BATCH: u64 = 64;
@@ -59,16 +65,10 @@ impl Indexer {
                 continue;
             }
 
-            let block_hash = block
-                .pointer("/header/hash")
-                .and_then(Value::as_str)
-                .context("block missing hash")?;
-            db::blocks::record(&self.state.db, next, block_hash).await?;
-
+            self.ingest_block(next, &block).await?;
             cursor = next;
             db::cursor::store(&self.state.db, cursor).await?;
         }
-
         Ok(())
     }
 
@@ -86,4 +86,61 @@ impl Indexer {
             None => Ok(None),
         }
     }
+
+    async fn ingest_block(&self, number: u64, block: &Value) -> anyhow::Result<()> {
+        let header = block.get("header").context("block missing header")?;
+        let block_hash = header.get("hash").and_then(Value::as_str).context("hash")?;
+        let ts = header
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .map(|s| parse_hex_u64(s).unwrap_or(0))
+            .unwrap_or(0);
+        db::blocks::record(&self.state.db, number, block_hash).await?;
+
+        let txs = block
+            .get("transactions")
+            .and_then(Value::as_array)
+            .context("transactions")?;
+        for tx in txs {
+            let tx_hash = tx.get("hash").and_then(Value::as_str).context("tx hash")?;
+            self.ingest_outputs(tx, tx_hash, number, ts).await?;
+        }
+        Ok(())
+    }
+
+    async fn ingest_outputs(
+        &self,
+        tx: &Value,
+        tx_hash: &str,
+        number: u64,
+        ts: u64,
+    ) -> anyhow::Result<()> {
+        let outputs = tx.get("outputs").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+        let outputs_data = tx.get("outputs_data").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+        let want = self.state.config.packet_lock.code_hash.as_str();
+        for (idx, output) in outputs.iter().enumerate() {
+            let lock_code = output.pointer("/lock/code_hash").and_then(Value::as_str).unwrap_or("");
+            if lock_code != want { continue; }
+            let raw = match outputs_data.get(idx).and_then(Value::as_str) { Some(s) => s, None => continue };
+            let bytes = match decode_hex(raw) { Some(b) => b, None => continue };
+            let state: PacketState = match serde_json::from_slice(&bytes) { Ok(s) => s, Err(_) => continue };
+            let capacity = output.get("capacity").and_then(Value::as_str).and_then(|s| parse_hex_u64(s).ok()).unwrap_or(0);
+            let out_point = format!("{tx_hash}:{idx}");
+            db::packets::upsert(&self.state.db, PacketRow {
+                out_point: &out_point,
+                state: &state,
+                current_capacity: capacity,
+                sealed_at: ts,
+                block_number: number,
+            }).await?;
+            db::packets::record_event(&self.state.db, &out_point, "seal", tx_hash, number, ts, None, Some(&capacity.to_string())).await?;
+            let _ = hex_str(&state.owner_lock_hash);
+        }
+        Ok(())
+    }
+}
+
+fn parse_hex_u64(s: &str) -> anyhow::Result<u64> {
+    let s = s.strip_prefix("0x").unwrap_or(s);
+    u64::from_str_radix(s, 16).context("parse hex u64")
 }
