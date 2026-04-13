@@ -26,4 +26,5 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 dotenvy = "0.15"
+ckb-hash = "0.200"
 pckt-types = { path = "../shared/pckt-types" }
