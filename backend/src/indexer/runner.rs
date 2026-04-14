@@ -33,7 +33,6 @@ impl Indexer {
             indexer = %self.state.config.ckb_indexer_url,
             "indexer task started"
         );
-
         let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
         loop {
             interval.tick().await;
@@ -47,16 +46,12 @@ impl Indexer {
         let tip = self.rpc.tip_header().await?;
         let mut cursor = db::cursor::load(&self.state.db).await?;
         let target = (cursor + SCAN_BATCH).min(tip.number);
-
         debug!(cursor, target, tip = tip.number, "scan window");
-
         while cursor < target {
             let next = cursor + 1;
             let block = match self.rpc.block_by_number(next).await? {
-                Some(b) => b,
-                None => break,
+                Some(b) => b, None => break,
             };
-
             if let Some(reorg_to) = self.detect_reorg(&block, next).await? {
                 warn!(from = next, to = reorg_to, "reorg detected, rolling back");
                 db::blocks::rollback(&self.state.db, reorg_to).await?;
@@ -64,7 +59,6 @@ impl Indexer {
                 db::cursor::store(&self.state.db, cursor).await?;
                 continue;
             }
-
             self.ingest_block(next, &block).await?;
             cursor = next;
             db::cursor::store(&self.state.db, cursor).await?;
@@ -73,13 +67,8 @@ impl Indexer {
     }
 
     async fn detect_reorg(&self, block: &Value, number: u64) -> anyhow::Result<Option<u64>> {
-        if number == 1 {
-            return Ok(None);
-        }
-        let parent_hash = block
-            .pointer("/header/parent_hash")
-            .and_then(Value::as_str)
-            .context("block missing parent_hash")?;
+        if number == 1 { return Ok(None); }
+        let parent_hash = block.pointer("/header/parent_hash").and_then(Value::as_str).context("parent_hash")?;
         match db::blocks::hash_at(&self.state.db, number - 1).await? {
             Some(stored) if stored == parent_hash => Ok(None),
             Some(_) => Ok(Some(number.saturating_sub(REORG_DEPTH).max(1))),
@@ -88,33 +77,20 @@ impl Indexer {
     }
 
     async fn ingest_block(&self, number: u64, block: &Value) -> anyhow::Result<()> {
-        let header = block.get("header").context("block missing header")?;
+        let header = block.get("header").context("header")?;
         let block_hash = header.get("hash").and_then(Value::as_str).context("hash")?;
-        let ts = header
-            .get("timestamp")
-            .and_then(Value::as_str)
-            .map(|s| parse_hex_u64(s).unwrap_or(0))
-            .unwrap_or(0);
+        let ts = header.get("timestamp").and_then(Value::as_str).map(|s| parse_hex_u64(s).unwrap_or(0)).unwrap_or(0);
         db::blocks::record(&self.state.db, number, block_hash).await?;
-
-        let txs = block
-            .get("transactions")
-            .and_then(Value::as_array)
-            .context("transactions")?;
+        let txs = block.get("transactions").and_then(Value::as_array).context("transactions")?;
         for tx in txs {
             let tx_hash = tx.get("hash").and_then(Value::as_str).context("tx hash")?;
+            self.ingest_inputs(tx, tx_hash, number, ts).await?;
             self.ingest_outputs(tx, tx_hash, number, ts).await?;
         }
         Ok(())
     }
 
-    async fn ingest_outputs(
-        &self,
-        tx: &Value,
-        tx_hash: &str,
-        number: u64,
-        ts: u64,
-    ) -> anyhow::Result<()> {
+    async fn ingest_outputs(&self, tx: &Value, tx_hash: &str, number: u64, ts: u64) -> anyhow::Result<()> {
         let outputs = tx.get("outputs").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
         let outputs_data = tx.get("outputs_data").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
         let want = self.state.config.packet_lock.code_hash.as_str();
@@ -127,14 +103,24 @@ impl Indexer {
             let capacity = output.get("capacity").and_then(Value::as_str).and_then(|s| parse_hex_u64(s).ok()).unwrap_or(0);
             let out_point = format!("{tx_hash}:{idx}");
             db::packets::upsert(&self.state.db, PacketRow {
-                out_point: &out_point,
-                state: &state,
-                current_capacity: capacity,
-                sealed_at: ts,
-                block_number: number,
+                out_point: &out_point, state: &state,
+                current_capacity: capacity, sealed_at: ts, block_number: number,
             }).await?;
             db::packets::record_event(&self.state.db, &out_point, "seal", tx_hash, number, ts, None, Some(&capacity.to_string())).await?;
             let _ = hex_str(&state.owner_lock_hash);
+        }
+        Ok(())
+    }
+
+    async fn ingest_inputs(&self, tx: &Value, tx_hash: &str, number: u64, ts: u64) -> anyhow::Result<()> {
+        let inputs = tx.get("inputs").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+        for input in inputs {
+            let prev_tx = input.pointer("/previous_output/tx_hash").and_then(Value::as_str).unwrap_or("");
+            if prev_tx.is_empty() { continue; }
+            let prev_idx = input.pointer("/previous_output/index").and_then(Value::as_str).and_then(|s| parse_hex_u64(s).ok()).unwrap_or(0);
+            let out_point = format!("{prev_tx}:{prev_idx}");
+            if db::packets::lookup(&self.state.db, &out_point).await?.is_none() { continue; }
+            db::packets::record_event(&self.state.db, &out_point, "claim", tx_hash, number, ts, None, None).await?;
         }
         Ok(())
     }
