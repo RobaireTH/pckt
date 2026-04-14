@@ -57,6 +57,37 @@ pub async fn lookup(pool: &SqlitePool, out_point: &str) -> Result<Option<(String
     Ok(row)
 }
 
+#[derive(Debug, Clone)]
+pub struct PacketSnapshot {
+    pub owner_lock_hash: String,
+    pub claim_pubkey_hash: String,
+    pub salt: Vec<u8>,
+    pub slots_total: u8,
+    pub slots_claimed: u8,
+    pub current_capacity: u64,
+}
+
+pub async fn snapshot(pool: &SqlitePool, out_point: &str) -> Result<Option<PacketSnapshot>> {
+    let row: Option<(String, String, Vec<u8>, i64, i64, String)> = sqlx::query_as(
+        "SELECT owner_lock_hash, claim_pubkey_hash, salt, slots_total, slots_claimed, current_capacity \
+         FROM packets WHERE out_point = ?1",
+    )
+    .bind(out_point)
+    .fetch_optional(pool)
+    .await
+    .context("snapshot packet")?;
+    Ok(row.map(
+        |(owner, pubkey, salt, total, claimed, capacity)| PacketSnapshot {
+            owner_lock_hash: owner,
+            claim_pubkey_hash: pubkey,
+            salt,
+            slots_total: total as u8,
+            slots_claimed: claimed as u8,
+            current_capacity: capacity.parse().unwrap_or(0),
+        },
+    ))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn record_event(
     pool: &SqlitePool,
