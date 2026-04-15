@@ -8,7 +8,10 @@ use tracing::{debug, info, warn};
 use crate::{
     ckb::CkbRpc,
     crypto::{decode_hex, hex_str},
-    db::{self, packets::PacketRow},
+    db::{
+        self,
+        packets::{PacketRow, PacketSnapshot},
+    },
     state::AppState,
 };
 
@@ -21,6 +24,9 @@ pub struct Indexer {
     rpc: CkbRpc,
 }
 
+struct NewPacket { out_point: String, state: PacketState, capacity: u64 }
+struct Predecessor { out_point: String, snapshot: PacketSnapshot }
+
 impl Indexer {
     pub fn new(state: AppState) -> Self {
         let rpc = CkbRpc::new(state.config.ckb_rpc_url.clone());
@@ -28,17 +34,11 @@ impl Indexer {
     }
 
     pub async fn run(self) {
-        info!(
-            network = ?self.state.config.network,
-            indexer = %self.state.config.ckb_indexer_url,
-            "indexer task started"
-        );
+        info!(network = ?self.state.config.network, indexer = %self.state.config.ckb_indexer_url, "indexer task started");
         let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
         loop {
             interval.tick().await;
-            if let Err(err) = self.tick().await {
-                warn!(?err, "indexer tick failed");
-            }
+            if let Err(err) = self.tick().await { warn!(?err, "indexer tick failed"); }
         }
     }
 
@@ -49,9 +49,7 @@ impl Indexer {
         debug!(cursor, target, tip = tip.number, "scan window");
         while cursor < target {
             let next = cursor + 1;
-            let block = match self.rpc.block_by_number(next).await? {
-                Some(b) => b, None => break,
-            };
+            let block = match self.rpc.block_by_number(next).await? { Some(b) => b, None => break };
             if let Some(reorg_to) = self.detect_reorg(&block, next).await? {
                 warn!(from = next, to = reorg_to, "reorg detected, rolling back");
                 db::blocks::rollback(&self.state.db, reorg_to).await?;
@@ -84,16 +82,63 @@ impl Indexer {
         let txs = block.get("transactions").and_then(Value::as_array).context("transactions")?;
         for tx in txs {
             let tx_hash = tx.get("hash").and_then(Value::as_str).context("tx hash")?;
-            self.ingest_inputs(tx, tx_hash, number, ts).await?;
-            self.ingest_outputs(tx, tx_hash, number, ts).await?;
+            self.ingest_tx(tx, tx_hash, number, ts).await?;
         }
         Ok(())
     }
 
-    async fn ingest_outputs(&self, tx: &Value, tx_hash: &str, number: u64, ts: u64) -> anyhow::Result<()> {
+    async fn ingest_tx(&self, tx: &Value, tx_hash: &str, number: u64, ts: u64) -> anyhow::Result<()> {
+        let predecessors = self.collect_predecessors(tx).await?;
+        let mut new_packets = self.collect_new_packets(tx, tx_hash);
+        for pred in predecessors {
+            let succ_idx = new_packets.iter().position(|np| np.state.salt == pred.snapshot.salt);
+            match succ_idx {
+                Some(idx) => {
+                    let succ = new_packets.remove(idx);
+                    let delta = pred.snapshot.current_capacity.saturating_sub(succ.capacity);
+                    db::packets::upsert(&self.state.db, PacketRow {
+                        out_point: &succ.out_point, state: &succ.state,
+                        current_capacity: succ.capacity, sealed_at: ts, block_number: number,
+                    }).await?;
+                    db::packets::record_event(&self.state.db, &pred.out_point, "claim", tx_hash, number, ts, None, Some(&delta.to_string())).await?;
+                }
+                None => {
+                    let amount = pred.snapshot.current_capacity.to_string();
+                    db::packets::record_event(&self.state.db, &pred.out_point, "claim", tx_hash, number, ts, None, Some(&amount)).await?;
+                }
+            }
+        }
+        for fresh in new_packets {
+            db::packets::upsert(&self.state.db, PacketRow {
+                out_point: &fresh.out_point, state: &fresh.state,
+                current_capacity: fresh.capacity, sealed_at: ts, block_number: number,
+            }).await?;
+            db::packets::record_event(&self.state.db, &fresh.out_point, "seal", tx_hash, number, ts, None, Some(&fresh.capacity.to_string())).await?;
+            let _ = hex_str(&fresh.state.owner_lock_hash);
+        }
+        Ok(())
+    }
+
+    async fn collect_predecessors(&self, tx: &Value) -> anyhow::Result<Vec<Predecessor>> {
+        let inputs = tx.get("inputs").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+        let mut out = Vec::new();
+        for input in inputs {
+            let prev_tx = input.pointer("/previous_output/tx_hash").and_then(Value::as_str).unwrap_or("");
+            if prev_tx.is_empty() { continue; }
+            let prev_idx = input.pointer("/previous_output/index").and_then(Value::as_str).and_then(|s| parse_hex_u64(s).ok()).unwrap_or(0);
+            let out_point = format!("{prev_tx}:{prev_idx}");
+            if let Some(snap) = db::packets::snapshot(&self.state.db, &out_point).await? {
+                out.push(Predecessor { out_point, snapshot: snap });
+            }
+        }
+        Ok(out)
+    }
+
+    fn collect_new_packets(&self, tx: &Value, tx_hash: &str) -> Vec<NewPacket> {
         let outputs = tx.get("outputs").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
         let outputs_data = tx.get("outputs_data").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
         let want = self.state.config.packet_lock.code_hash.as_str();
+        let mut out = Vec::new();
         for (idx, output) in outputs.iter().enumerate() {
             let lock_code = output.pointer("/lock/code_hash").and_then(Value::as_str).unwrap_or("");
             if lock_code != want { continue; }
@@ -101,28 +146,9 @@ impl Indexer {
             let bytes = match decode_hex(raw) { Some(b) => b, None => continue };
             let state: PacketState = match serde_json::from_slice(&bytes) { Ok(s) => s, Err(_) => continue };
             let capacity = output.get("capacity").and_then(Value::as_str).and_then(|s| parse_hex_u64(s).ok()).unwrap_or(0);
-            let out_point = format!("{tx_hash}:{idx}");
-            db::packets::upsert(&self.state.db, PacketRow {
-                out_point: &out_point, state: &state,
-                current_capacity: capacity, sealed_at: ts, block_number: number,
-            }).await?;
-            db::packets::record_event(&self.state.db, &out_point, "seal", tx_hash, number, ts, None, Some(&capacity.to_string())).await?;
-            let _ = hex_str(&state.owner_lock_hash);
+            out.push(NewPacket { out_point: format!("{tx_hash}:{idx}"), state, capacity });
         }
-        Ok(())
-    }
-
-    async fn ingest_inputs(&self, tx: &Value, tx_hash: &str, number: u64, ts: u64) -> anyhow::Result<()> {
-        let inputs = tx.get("inputs").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
-        for input in inputs {
-            let prev_tx = input.pointer("/previous_output/tx_hash").and_then(Value::as_str).unwrap_or("");
-            if prev_tx.is_empty() { continue; }
-            let prev_idx = input.pointer("/previous_output/index").and_then(Value::as_str).and_then(|s| parse_hex_u64(s).ok()).unwrap_or(0);
-            let out_point = format!("{prev_tx}:{prev_idx}");
-            if db::packets::lookup(&self.state.db, &out_point).await?.is_none() { continue; }
-            db::packets::record_event(&self.state.db, &out_point, "claim", tx_hash, number, ts, None, None).await?;
-        }
-        Ok(())
+        out
     }
 }
 
