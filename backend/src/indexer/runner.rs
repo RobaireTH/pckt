@@ -7,7 +7,7 @@ use tracing::{debug, info, warn};
 
 use crate::{
     ckb::CkbRpc,
-    crypto::{decode_hex, hex_str},
+    crypto::{decode_hex, hash_type_byte, hex_str, script_hash},
     db::{
         self,
         packets::{PacketRow, PacketSnapshot},
@@ -90,21 +90,26 @@ impl Indexer {
     async fn ingest_tx(&self, tx: &Value, tx_hash: &str, number: u64, ts: u64) -> anyhow::Result<()> {
         let predecessors = self.collect_predecessors(tx).await?;
         let mut new_packets = self.collect_new_packets(tx, tx_hash);
+        let output_locks = self.collect_output_locks(tx);
         for pred in predecessors {
             let succ_idx = new_packets.iter().position(|np| np.state.salt == pred.snapshot.salt);
             match succ_idx {
                 Some(idx) => {
                     let succ = new_packets.remove(idx);
                     let delta = pred.snapshot.current_capacity.saturating_sub(succ.capacity);
+                    let claimer = pick_claimer(&output_locks, &pred.snapshot.owner_lock_hash);
                     db::packets::upsert(&self.state.db, PacketRow {
                         out_point: &succ.out_point, state: &succ.state,
                         current_capacity: succ.capacity, sealed_at: ts, block_number: number,
                     }).await?;
-                    db::packets::record_event(&self.state.db, &pred.out_point, "claim", tx_hash, number, ts, None, Some(&delta.to_string())).await?;
+                    db::packets::record_event(&self.state.db, &pred.out_point, "claim", tx_hash, number, ts, claimer.as_deref(), Some(&delta.to_string())).await?;
                 }
                 None => {
+                    let owns_output = output_locks.iter().any(|h| h == &pred.snapshot.owner_lock_hash);
+                    let event_type = if owns_output { "reclaim" } else { "claim" };
+                    let claimer = if owns_output { None } else { pick_claimer(&output_locks, &pred.snapshot.owner_lock_hash) };
                     let amount = pred.snapshot.current_capacity.to_string();
-                    db::packets::record_event(&self.state.db, &pred.out_point, "claim", tx_hash, number, ts, None, Some(&amount)).await?;
+                    db::packets::record_event(&self.state.db, &pred.out_point, event_type, tx_hash, number, ts, claimer.as_deref(), Some(&amount)).await?;
                 }
             }
         }
@@ -150,6 +155,28 @@ impl Indexer {
         }
         out
     }
+
+    fn collect_output_locks(&self, tx: &Value) -> Vec<String> {
+        let outputs = tx.get("outputs").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+        let want = self.state.config.packet_lock.code_hash.as_str();
+        outputs.iter().filter_map(|o| {
+            let lock = o.get("lock")?;
+            let code_hex = lock.get("code_hash").and_then(Value::as_str)?;
+            if code_hex == want { return None; }
+            let code = decode_hex(code_hex)?;
+            if code.len() != 32 { return None; }
+            let mut code_arr = [0u8; 32];
+            code_arr.copy_from_slice(&code);
+            let hash_type = lock.get("hash_type").and_then(Value::as_str).map(hash_type_byte).unwrap_or(0);
+            let args_hex = lock.get("args").and_then(Value::as_str).unwrap_or("0x");
+            let args = decode_hex(args_hex).unwrap_or_default();
+            Some(hex_str(&script_hash(&code_arr, hash_type, &args)))
+        }).collect()
+    }
+}
+
+fn pick_claimer(output_locks: &[String], owner: &str) -> Option<String> {
+    output_locks.iter().find(|h| h.as_str() != owner).cloned()
 }
 
 fn parse_hex_u64(s: &str) -> anyhow::Result<u64> {
