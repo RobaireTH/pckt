@@ -1,3 +1,4 @@
+pub mod bus;
 pub mod ckb;
 pub mod config;
 pub mod crypto;
@@ -31,9 +32,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         .with_state(state.clone());
 
     let addr: SocketAddr = ([0, 0, 0, 0], state.config.port).into();
-    let listener = TcpListener::bind(addr)
-        .await
-        .with_context(|| format!("bind {addr}"))?;
+    let listener = TcpListener::bind(addr).await.with_context(|| format!("bind {addr}"))?;
     info!(%addr, "pckt-backend listening");
     axum::serve(listener, app).await?;
     Ok(())
