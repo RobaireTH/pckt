@@ -1,14 +1,12 @@
 mod events;
 mod healthz;
 mod links;
+mod messages;
 mod packets;
 mod prices;
 mod relay;
 
-use axum::{
-    routing::{get, post},
-    Router,
-};
+use axum::{routing::{get, post}, Router};
 
 use crate::state::AppState;
 
@@ -21,6 +19,8 @@ pub fn router() -> Router<AppState> {
         .route("/v1/packets/by-pubkey/:hash", get(packets::by_pubkey))
         .route("/v1/links", post(links::create))
         .route("/l/:slug", get(links::redirect))
+        .route("/v1/messages", post(messages::store))
+        .route("/v1/messages/:hash", get(messages::get))
         .route("/v1/relay/tx", post(relay::submit))
         .route("/v1/prices/ckb", get(prices::ckb))
         .route("/v1/events/stream", get(events::stream))
