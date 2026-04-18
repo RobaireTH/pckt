@@ -6,6 +6,7 @@ use serde_json::Value;
 use tracing::{debug, info, warn};
 
 use crate::{
+    bus::{EventBus, PacketEventMsg},
     ckb::CkbRpc,
     crypto::{decode_hex, hash_type_byte, hex_str, script_hash},
     db::{
@@ -103,6 +104,7 @@ impl Indexer {
                         current_capacity: succ.capacity, sealed_at: ts, block_number: number,
                     }).await?;
                     db::packets::record_event(&self.state.db, &pred.out_point, "claim", tx_hash, number, ts, claimer.as_deref(), Some(&delta.to_string())).await?;
+                    publish(&self.state.bus, PacketEventMsg { event_type: "claim".into(), out_point: pred.out_point.clone(), tx_hash: tx_hash.into(), block_number: number, ts, claimer_lock_hash: claimer.clone(), slot_amount: Some(delta.to_string()), owner_lock_hash: Some(pred.snapshot.owner_lock_hash.clone()), claim_pubkey_hash: Some(pred.snapshot.claim_pubkey_hash.clone()) });
                 }
                 None => {
                     let owns_output = output_locks.iter().any(|h| h == &pred.snapshot.owner_lock_hash);
@@ -110,6 +112,7 @@ impl Indexer {
                     let claimer = if owns_output { None } else { pick_claimer(&output_locks, &pred.snapshot.owner_lock_hash) };
                     let amount = pred.snapshot.current_capacity.to_string();
                     db::packets::record_event(&self.state.db, &pred.out_point, event_type, tx_hash, number, ts, claimer.as_deref(), Some(&amount)).await?;
+                    publish(&self.state.bus, PacketEventMsg { event_type: event_type.into(), out_point: pred.out_point.clone(), tx_hash: tx_hash.into(), block_number: number, ts, claimer_lock_hash: claimer.clone(), slot_amount: Some(amount.clone()), owner_lock_hash: Some(pred.snapshot.owner_lock_hash.clone()), claim_pubkey_hash: Some(pred.snapshot.claim_pubkey_hash.clone()) });
                 }
             }
         }
@@ -118,8 +121,10 @@ impl Indexer {
                 out_point: &fresh.out_point, state: &fresh.state,
                 current_capacity: fresh.capacity, sealed_at: ts, block_number: number,
             }).await?;
+            let owner = hex_str(&fresh.state.owner_lock_hash);
+            let pubkey = hex_str(&fresh.state.claim_pubkey);
             db::packets::record_event(&self.state.db, &fresh.out_point, "seal", tx_hash, number, ts, None, Some(&fresh.capacity.to_string())).await?;
-            let _ = hex_str(&fresh.state.owner_lock_hash);
+            publish(&self.state.bus, PacketEventMsg { event_type: "seal".into(), out_point: fresh.out_point.clone(), tx_hash: tx_hash.into(), block_number: number, ts, claimer_lock_hash: None, slot_amount: Some(fresh.capacity.to_string()), owner_lock_hash: Some(owner), claim_pubkey_hash: Some(pubkey) });
         }
         Ok(())
     }
@@ -174,6 +179,8 @@ impl Indexer {
         }).collect()
     }
 }
+
+fn publish(bus: &EventBus, msg: PacketEventMsg) { bus.publish(msg); }
 
 fn pick_claimer(output_locks: &[String], owner: &str) -> Option<String> {
     output_locks.iter().find(|h| h.as_str() != owner).cloned()
