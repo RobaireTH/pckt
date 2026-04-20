@@ -1,4 +1,5 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::{extract::State, Json};
 use serde::Serialize;
@@ -8,13 +9,21 @@ use crate::{
     state::AppState,
 };
 
-#[derive(Serialize)]
+const CACHE_TTL: Duration = Duration::from_secs(30);
+
+#[derive(Serialize, Clone)]
 pub struct Price {
     pub usd: f64,
     pub ts: i64,
 }
 
+static CACHE: OnceLock<Mutex<Option<(Price, std::time::Instant)>>> = OnceLock::new();
+
 pub async fn ckb(State(state): State<AppState>) -> ApiResult<Json<Price>> {
+    if let Some(cached) = read_cache() {
+        return Ok(Json(cached));
+    }
+
     let resp = reqwest::get(&state.config.price_feed_url)
         .await
         .map_err(|e| ApiError::Upstream(e.to_string()))?;
@@ -29,10 +38,30 @@ pub async fn ckb(State(state): State<AppState>) -> ApiResult<Json<Price>> {
         .and_then(|v| v.as_f64())
         .ok_or_else(|| ApiError::Upstream("missing usd field".into()))?;
 
-    Ok(Json(Price {
+    let price = Price {
         usd,
         ts: now_unix(),
-    }))
+    };
+    write_cache(price.clone());
+    Ok(Json(price))
+}
+
+fn read_cache() -> Option<Price> {
+    let cell = CACHE.get_or_init(|| Mutex::new(None));
+    let guard = cell.lock().ok()?;
+    let (price, at) = guard.as_ref()?;
+    if at.elapsed() < CACHE_TTL {
+        Some(price.clone())
+    } else {
+        None
+    }
+}
+
+fn write_cache(price: Price) {
+    let cell = CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = cell.lock() {
+        *guard = Some((price, std::time::Instant::now()));
+    }
 }
 
 fn now_unix() -> i64 {
