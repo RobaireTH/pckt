@@ -35,24 +35,43 @@ pub async fn create(
         return Err(ApiError::BadRequest("full_url must be http(s)".into()));
     }
 
-    let slug = generate_slug();
     let now = unix_now();
     let expires_at = body.ttl.map(|ttl| now + ttl);
 
-    sqlx::query(
-        "INSERT INTO shortlinks (slug, full_url, created_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
-    )
-    .bind(&slug)
-    .bind(&body.full_url)
-    .bind(now)
-    .bind(expires_at)
-    .execute(&state.db)
-    .await?;
+    let slug = insert_with_retry(&state, &body.full_url, now, expires_at).await?;
 
     Ok(Json(CreatedLink {
         short_url: format!("{}/l/{slug}", state.config.shortlink_base),
         slug,
     }))
+}
+
+const SLUG_RETRIES: usize = 5;
+
+async fn insert_with_retry(
+    state: &AppState,
+    full_url: &str,
+    now: i64,
+    expires_at: Option<i64>,
+) -> ApiResult<String> {
+    for _ in 0..SLUG_RETRIES {
+        let slug = generate_slug();
+        let result = sqlx::query(
+            "INSERT INTO shortlinks (slug, full_url, created_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
+        )
+        .bind(&slug)
+        .bind(full_url)
+        .bind(now)
+        .bind(expires_at)
+        .execute(&state.db)
+        .await;
+        match result {
+            Ok(_) => return Ok(slug),
+            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(ApiError::Upstream("could not allocate slug".into()))
 }
 
 pub async fn redirect(
