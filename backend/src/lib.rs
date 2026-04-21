@@ -26,6 +26,9 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let indexer = Indexer::new(state.clone());
     tokio::spawn(async move { indexer.run().await });
 
+    let sweeper_state = state.clone();
+    tokio::spawn(async move { run_shortlink_sweeper(sweeper_state).await });
+
     let app = routes::router()
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
@@ -36,4 +39,20 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     info!(%addr, "pckt-backend listening");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+async fn run_shortlink_sweeper(state: AppState) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+    loop {
+        interval.tick().await;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        match db::shortlinks::purge_expired(&state.db, now).await {
+            Ok(n) if n > 0 => info!(removed = n, "expired shortlinks swept"),
+            Ok(_) => {}
+            Err(err) => tracing::warn!(?err, "shortlink sweep failed"),
+        }
+    }
 }
