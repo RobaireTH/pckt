@@ -24,10 +24,10 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let state = AppState::new(pool, config);
 
     let indexer = Indexer::new(state.clone());
-    tokio::spawn(async move { indexer.run().await });
+    let indexer_handle = tokio::spawn(async move { indexer.run().await });
 
     let sweeper_state = state.clone();
-    tokio::spawn(async move { run_shortlink_sweeper(sweeper_state).await });
+    let sweeper_handle = tokio::spawn(async move { run_shortlink_sweeper(sweeper_state).await });
 
     let app = routes::router()
         .layer(TraceLayer::new_for_http())
@@ -37,7 +37,12 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let addr: SocketAddr = ([0, 0, 0, 0], state.config.port).into();
     let listener = TcpListener::bind(addr).await.with_context(|| format!("bind {addr}"))?;
     info!(%addr, "pckt-backend listening");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+    indexer_handle.abort();
+    sweeper_handle.abort();
+    info!("pckt-backend shutdown complete");
     Ok(())
 }
 
@@ -55,4 +60,23 @@ async fn run_shortlink_sweeper(state: AppState) {
             Err(err) => tracing::warn!(?err, "shortlink sweep failed"),
         }
     }
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async { let _ = tokio::signal::ctrl_c().await; };
+    #[cfg(unix)]
+    let terminate = async {
+        if let Ok(mut sig) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            sig.recv().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+    }
+    info!("shutdown signal received");
 }
