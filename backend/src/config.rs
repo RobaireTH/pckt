@@ -11,6 +11,7 @@ pub struct Config {
     pub price_feed_url: String,
     pub shortlink_base: String,
     pub packet_lock: PacketLock,
+    pub allowed_origins: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -47,6 +48,12 @@ impl Config {
                     .parse()
                     .context("PACKET_LOCK_OUT_POINT_INDEX")?,
             },
+            allowed_origins: env_or("ALLOWED_ORIGINS", "*")
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect(),
         })
     }
 }

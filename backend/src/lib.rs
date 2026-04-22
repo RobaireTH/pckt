@@ -11,6 +11,7 @@ pub mod state;
 use std::net::SocketAddr;
 
 use anyhow::Context;
+use axum::http::{HeaderValue, Method};
 use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
@@ -31,7 +32,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     let app = routes::router()
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
+        .layer(cors_layer(&state.config.allowed_origins))
         .with_state(state.clone());
 
     let addr: SocketAddr = ([0, 0, 0, 0], state.config.port).into();
@@ -44,6 +45,18 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     sweeper_handle.abort();
     info!("pckt-backend shutdown complete");
     Ok(())
+}
+
+fn cors_layer(allowed: &[String]) -> CorsLayer {
+    let methods = [Method::GET, Method::POST, Method::OPTIONS];
+    if allowed.iter().any(|s| s == "*") || allowed.is_empty() {
+        return CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods(methods)
+            .allow_headers(tower_http::cors::Any);
+    }
+    let origins: Vec<HeaderValue> = allowed.iter().filter_map(|s| HeaderValue::from_str(s).ok()).collect();
+    CorsLayer::new().allow_origin(origins).allow_methods(methods).allow_headers(tower_http::cors::Any)
 }
 
 async fn run_shortlink_sweeper(state: AppState) {
