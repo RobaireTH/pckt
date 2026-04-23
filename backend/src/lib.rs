@@ -11,9 +11,13 @@ pub mod state;
 use std::net::SocketAddr;
 
 use anyhow::Context;
-use axum::http::{HeaderValue, Method};
+use axum::http::{HeaderName, HeaderValue, Method, Request};
 use tokio::net::TcpListener;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{
+    cors::CorsLayer,
+    request_id::{MakeRequestId, PropagateRequestIdLayer, RequestId, SetRequestIdLayer},
+    trace::TraceLayer,
+};
 use tracing::info;
 
 use crate::{config::Config, indexer::Indexer, state::AppState};
@@ -26,17 +30,35 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     let indexer = Indexer::new(state.clone());
     let indexer_handle = tokio::spawn(async move { indexer.run().await });
-
     let sweeper_state = state.clone();
     let sweeper_handle = tokio::spawn(async move { run_shortlink_sweeper(sweeper_state).await });
 
+    let request_id_header = HeaderName::from_static("x-request-id");
     let app = routes::router()
-        .layer(TraceLayer::new_for_http())
+        .layer(PropagateRequestIdLayer::new(request_id_header.clone()))
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|req: &Request<_>| {
+                let id = req
+                    .headers()
+                    .get("x-request-id")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("-");
+                tracing::info_span!(
+                    "http",
+                    request_id = id,
+                    method = %req.method(),
+                    uri = %req.uri()
+                )
+            }),
+        )
+        .layer(SetRequestIdLayer::new(request_id_header, UuidRequestId))
         .layer(cors_layer(&state.config.allowed_origins))
         .with_state(state.clone());
 
     let addr: SocketAddr = ([0, 0, 0, 0], state.config.port).into();
-    let listener = TcpListener::bind(addr).await.with_context(|| format!("bind {addr}"))?;
+    let listener = TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("bind {addr}"))?;
     info!(%addr, "pckt-backend listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
@@ -45,18 +67,6 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     sweeper_handle.abort();
     info!("pckt-backend shutdown complete");
     Ok(())
-}
-
-fn cors_layer(allowed: &[String]) -> CorsLayer {
-    let methods = [Method::GET, Method::POST, Method::OPTIONS];
-    if allowed.iter().any(|s| s == "*") || allowed.is_empty() {
-        return CorsLayer::new()
-            .allow_origin(tower_http::cors::Any)
-            .allow_methods(methods)
-            .allow_headers(tower_http::cors::Any);
-    }
-    let origins: Vec<HeaderValue> = allowed.iter().filter_map(|s| HeaderValue::from_str(s).ok()).collect();
-    CorsLayer::new().allow_origin(origins).allow_methods(methods).allow_headers(tower_http::cors::Any)
 }
 
 async fn run_shortlink_sweeper(state: AppState) {
@@ -75,8 +85,38 @@ async fn run_shortlink_sweeper(state: AppState) {
     }
 }
 
+#[derive(Clone, Default)]
+struct UuidRequestId;
+
+impl MakeRequestId for UuidRequestId {
+    fn make_request_id<B>(&mut self, _req: &Request<B>) -> Option<RequestId> {
+        let id = uuid::Uuid::new_v4().to_string();
+        HeaderValue::from_str(&id).ok().map(RequestId::new)
+    }
+}
+
+fn cors_layer(allowed: &[String]) -> CorsLayer {
+    let methods = [Method::GET, Method::POST, Method::OPTIONS];
+    if allowed.iter().any(|s| s == "*") || allowed.is_empty() {
+        return CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods(methods)
+            .allow_headers(tower_http::cors::Any);
+    }
+    let origins: Vec<HeaderValue> = allowed
+        .iter()
+        .filter_map(|s| HeaderValue::from_str(s).ok())
+        .collect();
+    CorsLayer::new()
+        .allow_origin(origins)
+        .allow_methods(methods)
+        .allow_headers(tower_http::cors::Any)
+}
+
 async fn shutdown_signal() {
-    let ctrl_c = async { let _ = tokio::signal::ctrl_c().await; };
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
     #[cfg(unix)]
     let terminate = async {
         if let Ok(mut sig) =

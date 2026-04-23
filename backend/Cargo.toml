@@ -18,7 +18,8 @@ tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures = "0.3"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "request-id", "util"] }
+uuid = { version = "1", features = ["v4"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
@@ -30,3 +31,8 @@ thiserror = { workspace = true }
 dotenvy = "0.15"
 ckb-hash = "0.200"
 pckt-types = { path = "../shared/pckt-types" }
+
+[dev-dependencies]
+hyper = { version = "1", features = ["full"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
