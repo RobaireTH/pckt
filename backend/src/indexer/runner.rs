@@ -21,9 +21,13 @@ const SCAN_BATCH: u64 = 64;
 const REORG_DEPTH: u64 = 50;
 const BACKOFF_MAX_SECS: u64 = 300;
 
+const BACKFILL_THRESHOLD: u64 = 1024;
+const BACKFILL_PAGE: u32 = 100;
+
 pub struct Indexer {
     state: AppState,
     rpc: CkbRpc,
+    indexer_rpc: CkbRpc,
 }
 
 struct NewPacket {
@@ -40,7 +44,12 @@ struct Predecessor {
 impl Indexer {
     pub fn new(state: AppState) -> Self {
         let rpc = CkbRpc::new(state.config.ckb_rpc_url.clone());
-        Self { state, rpc }
+        let indexer_rpc = CkbRpc::new(state.config.ckb_indexer_url.clone());
+        Self {
+            state,
+            rpc,
+            indexer_rpc,
+        }
     }
 
     pub async fn run(self) {
@@ -74,6 +83,13 @@ impl Indexer {
         let tip = self.rpc.tip_header().await?;
         let mut cursor = db::cursor::load(&self.state.db).await?;
 
+        if tip.number.saturating_sub(cursor) > BACKFILL_THRESHOLD {
+            info!(cursor, tip = tip.number, "starting bulk backfill");
+            let inserted = self.backfill().await?;
+            cursor = tip.number;
+            db::cursor::store(&self.state.db, cursor).await?;
+            info!(inserted, cursor, "bulk backfill complete");
+        }
 
         let target = (cursor + SCAN_BATCH).min(tip.number);
 
