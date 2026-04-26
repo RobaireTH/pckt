@@ -5,6 +5,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use pckt_backend::{
+    bus::PacketEventMsg,
     config::{Config, Network, PacketLock},
     db, routes,
     state::AppState,
@@ -218,6 +219,64 @@ async fn cursor_roundtrip() {
     assert_eq!(db::cursor::load(&pool).await.unwrap(), 100);
 }
 
+#[tokio::test]
+async fn sse_publishes_event() {
+    let state = build_state().await;
+    let app = routes::router().with_state(state.clone());
+
+    let bus = state.bus.clone();
+    let pump = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        bus.publish(PacketEventMsg {
+            event_type: "seal".into(),
+            out_point: "0xabc:0".into(),
+            tx_hash: "0xtx".into(),
+            block_number: 7,
+            ts: 100,
+            claimer_lock_hash: None,
+            slot_amount: Some("100".into()),
+            owner_lock_hash: Some("0xowner".into()),
+            claim_pubkey_hash: Some("0xpub".into()),
+        });
+    });
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/events/stream")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers().get("content-type").unwrap(),
+        "text/event-stream"
+    );
+
+    let mut body = resp.into_body();
+    let frame = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            match body.frame().await {
+                Some(Ok(f)) => {
+                    if let Ok(data) = f.into_data() {
+                        let s = String::from_utf8_lossy(&data).to_string();
+                        if s.contains("0xabc:0") {
+                            return s;
+                        }
+                    }
+                }
+                Some(Err(_)) | None => return String::new(),
+            }
+        }
+    })
+    .await
+    .unwrap();
+    pump.await.unwrap();
+    assert!(frame.contains("event: seal"), "frame = {frame}");
+    assert!(frame.contains("\"out_point\":\"0xabc:0\""));
+}
 
 #[tokio::test]
 async fn block_hashes_record_and_rollback() {
