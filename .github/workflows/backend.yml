@@ -1,0 +1,34 @@
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'shared/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'shared/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace --locked
