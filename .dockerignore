@@ -1,0 +1,13 @@
+target
+**/target
+frontend
+node_modules
+.git
+.github
+*.md
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+.env.local
