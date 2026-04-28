@@ -13,6 +13,10 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(db: SqlitePool, config: Config) -> Self {
-        Self { db, config: Arc::new(config), bus: EventBus::new() }
+        Self {
+            db,
+            config: Arc::new(config),
+            bus: EventBus::new(),
+        }
     }
 }

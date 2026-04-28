@@ -6,7 +6,10 @@ mod packets;
 mod prices;
 mod relay;
 
-use axum::{routing::{get, post}, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 
 use crate::state::AppState;
 
