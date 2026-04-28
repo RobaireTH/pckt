@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["backend", "shared/pckt-types"]
-exclude = ["frontend"]
+exclude = ["frontend", "contract"]
 
 [workspace.package]
 edition = "2021"
