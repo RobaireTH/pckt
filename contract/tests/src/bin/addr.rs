@@ -12,7 +12,10 @@ fn parse_hex(s: &str) -> Vec<u8> {
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 4 {
-        eprintln!("usage: {} <code_hash_hex> <hash_type:data|type|data1|data2> <args_hex>", args[0]);
+        eprintln!(
+            "usage: {} <code_hash_hex> <hash_type:data|type|data1|data2> <args_hex>",
+            args[0]
+        );
         std::process::exit(1);
     }
     let code_hash = parse_hex(&args[1]);

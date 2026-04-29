@@ -6,3 +6,6 @@ target/
 .env
 .env.local
 NOTES/
+.devnet/
+PLAN.md
+backend/PLAN.md

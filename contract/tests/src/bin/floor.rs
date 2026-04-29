@@ -84,7 +84,13 @@ fn main() {
     for &slots in &[5u8, 10, 16, 32, 64] {
         for &msg in &[0usize, 100, 256] {
             let s = cell_floor(slots, msg);
-            println!("{:>10} {:>10} {:>20} {:>10}", slots, msg, s, s / 100_000_000);
+            println!(
+                "{:>10} {:>10} {:>20} {:>10}",
+                slots,
+                msg,
+                s,
+                s / 100_000_000
+            );
         }
     }
 }
