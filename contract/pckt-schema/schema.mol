@@ -1,0 +1,42 @@
+// PCKT lock script schema, v1.
+// See NOTES/DECISIONS.md and NOTES/CONTRACT.md for rationale.
+
+array Byte16 [byte; 16];
+array Byte32 [byte; 32];
+array Byte33 [byte; 33];
+array Byte65 [byte; 65];
+array Uint64 [byte; 8];
+
+vector Bytes <byte>;
+vector Byte32Vec <Byte32>;
+
+table PacketData {
+    version:          byte,
+    packet_type:      byte,
+    slots_total:      byte,
+    slots_claimed:    byte,
+    expiry:           Uint64,
+    unlock_time:      Uint64,
+    initial_capacity: Uint64,
+    owner_lock_hash:  Byte32,
+    claim_pubkey:     Byte33,
+    salt:             Byte16,
+    message:          Bytes,
+    claimed_locks:    Byte32Vec,
+}
+
+table Claim {
+    signature:         Byte65,
+    claimer_lock_hash: Byte32,
+}
+
+table Reclaim {}
+
+union PacketAction {
+    Claim,
+    Reclaim,
+}
+
+table PacketWitness {
+    action: PacketAction,
+}

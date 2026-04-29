@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["pckt-lock", "pckt-schema", "tests"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+authors = ["Robaire <robaireth@gmail.com>"]
+
+[profile.release]
+overflow-checks = true
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = false
