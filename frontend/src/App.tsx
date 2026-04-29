@@ -65,7 +65,7 @@ function initialDraft(): Draft {
 export function App() {
   const [route, setRoute] = useState<Route>(parseRoute);
   const [draft, setDraft] = useState<Draft>(initialDraft);
-  const { wallet } = useWallet();
+  const { wallet, lockHash } = useWallet();
   const [packets, setPackets] = useState<PacketSummary[]>([]);
   const [selectedOutPoint, setSelectedOutPoint] = useState<string | null>(null);
   const [priceUsd, setPriceUsd] = useState<number | null>(null);
@@ -86,7 +86,9 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
-    const owner = wallet?.address;
+    // Backend indexes packets by the lock script hash (`owner_lock_hash`),
+    // not the human-readable wallet address.
+    const owner = lockHash ?? undefined;
     fetchPackets(owner).then(
       data => {
         if (!cancelled) setPackets(data);
@@ -98,7 +100,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [wallet?.address, route]);
+  }, [lockHash, route]);
 
   useEffect(() => {
     let cancelled = false;
