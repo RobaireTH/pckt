@@ -77,6 +77,22 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
         This secure link includes the claim secret in the URL fragment (client-side only). The backend
         only receives the public short link.
       </div>
+      <div
+        style={{
+          marginTop: 8,
+          maxWidth: 440,
+          padding: '12px 14px',
+          background: 'rgba(126,20,24,.08)',
+          border: '1px solid rgba(126,20,24,.16)',
+          borderRadius: 12,
+          fontSize: 12,
+          color: 'var(--fg)',
+          lineHeight: 1.55,
+        }}
+      >
+        For now, this secure share link is only shown once on this screen. Copy or share it before
+        leaving, because you will not be able to reopen it later.
+      </div>
 
       <div className="pckt-share-packet">
         <Packet
@@ -159,6 +175,18 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
         <Button variant="primary" size="lg" iconRight="arrow_right" onClick={onHome}>
           Back to home
         </Button>
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--fg-quiet)',
+          fontFamily: 'var(--font-mono)',
+          letterSpacing: '.04em',
+          textAlign: 'center',
+          maxWidth: 420,
+        }}
+      >
+        Leaving this screen hides the secure claim link for now.
       </div>
     </div>
   );
