@@ -18,6 +18,7 @@ import {
   decodePacketData,
   encodeClaimWitness,
   encodePacketData,
+  encodeReclaimWitness,
   maxFloor,
   type PacketData,
 } from './molecule';
@@ -228,4 +229,39 @@ export async function buildAndRelayClaimTx(params: {
   const signedJson = toRpcTransaction(signed);
   const { tx_hash } = await relayTransaction(signedJson);
   return { txHash: tx_hash, payout };
+}
+
+export async function buildAndRelayReclaimTx(params: {
+  outPoint: string;
+  signer: Signer;
+}): Promise<{ txHash: string }> {
+  const { outPoint, signer } = params;
+  const op = parseOutPoint(outPoint);
+  const packetCell = await signer.client.getCellLive(op, true, true);
+  if (!packetCell?.cellOutput) throw new Error('Packet cell not live');
+  const pd = decodePacketData(packetCell.outputData);
+  const owner = await signer.getRecommendedAddressObj();
+  const inputCap = toBigInt(packetCell.cellOutput.capacity.toString());
+  const expiry = toBigInt(pd.expiry);
+
+  const tx = Transaction.from({
+    inputs: [{
+      previousOutput: op,
+      since: 0x4000000000000000n | expiry,
+    }],
+    outputs: [{ lock: owner.script, capacity: inputCap }],
+    outputsData: ['0x'],
+  });
+
+  tx.addCellDeps({
+    depType: 'code',
+    outPoint: { txHash: PCKT_LOCK.txHash, index: PCKT_LOCK.index },
+  });
+  tx.setWitnessArgsAt(0, WitnessArgs.from({ lock: encodeReclaimWitness() }));
+  await tx.completeFeeBy(signer);
+
+  const signed = await signer.signTransaction(tx);
+  const signedJson = toRpcTransaction(signed);
+  const { tx_hash } = await relayTransaction(signedJson);
+  return { txHash: tx_hash };
 }

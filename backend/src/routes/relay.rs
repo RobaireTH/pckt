@@ -46,6 +46,12 @@ fn classify_relay_error(msg: &str) -> ApiError {
     if msg.contains("error code 53") {
         return ApiError::Conflict("This packet is still sealed and cannot be claimed yet.".into());
     }
+    if msg.contains("error code 80") {
+        return ApiError::Conflict("This packet cannot be reclaimed until it expires.".into());
+    }
+    if msg.contains("error code 82") {
+        return ApiError::Conflict("This packet still has an active successor and cannot be reclaimed.".into());
+    }
     if msg.contains("InsufficientCellCapacity") {
         return ApiError::BadRequest(
             "The resulting claim cell is below CKB's minimum live-cell capacity.".into(),
@@ -87,6 +93,15 @@ mod tests {
         let err = classify_relay_error("ckb rpc error: ... error code 54 ...");
         match err {
             ApiError::Conflict(msg) => assert!(msg.contains("fully claimed")),
+            other => panic!("expected conflict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_reclaim_before_expiry_to_conflict() {
+        let err = classify_relay_error("ckb rpc error: ... error code 80 ...");
+        match err {
+            ApiError::Conflict(msg) => assert!(msg.contains("reclaimed until it expires")),
             other => panic!("expected conflict, got {other:?}"),
         }
     }

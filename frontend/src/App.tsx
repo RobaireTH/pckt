@@ -75,6 +75,7 @@ export function App() {
   const [sentPackets, setSentPackets] = useState<PacketSummary[]>([]);
   const [claimedPackets, setClaimedPackets] = useState<ClaimedPacket[]>([]);
   const [selectedOutPoint, setSelectedOutPoint] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [priceUsd, setPriceUsd] = useState<number | null>(null);
   const [lastSeal, setLastSeal] = useState<{
     txHash: string;
@@ -107,7 +108,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [lockHash, route]);
+  }, [lockHash, route, refreshNonce]);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +128,7 @@ export function App() {
   const go = (r: Route) => {
     window.location.hash = `#/${r}`;
   };
+  const refreshPackets = () => setRefreshNonce(v => v + 1);
 
   const onPatch = (p: Partial<Draft>) => setDraft(d => ({ ...d, ...p }));
   const setType = (t: PacketType) => onPatch({ type: t });
@@ -206,7 +208,7 @@ export function App() {
         />
       )}
       {route === 'claim' && <Claim onOpen={() => go('app')} outPoint={selectedOutPoint} />}
-      {route === 'inbox' && <Inbox packets={sentPackets} />}
+      {route === 'inbox' && <Inbox packets={sentPackets} onRefresh={refreshPackets} />}
       {route === 'activity' && (
         <Activity sentPackets={sentPackets} claimedPackets={claimedPackets} />
       )}

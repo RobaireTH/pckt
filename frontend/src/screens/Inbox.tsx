@@ -1,9 +1,12 @@
+import { Button } from '../components/ui/Button';
 import { useState } from 'react';
 import { Icon } from '../components/ui/Icon';
 import { Chip } from '../components/ui/Chip';
 import { Packet } from '../components/Packet';
 import type { PacketSummary } from '../api';
+import { useWallet } from '../hooks/useWallet';
 import { ownerLabel, packetMoment, packetTypeInfo } from '../packets';
+import { buildAndRelayReclaimTx } from '../tx';
 
 type InboxItem = {
   id: string;
@@ -15,14 +18,19 @@ type InboxItem = {
   amount?: string;
   meta: string;
   when: string;
+  expiry: number;
 };
 
 type Filter = 'all' | 'open' | 'past';
 
-type Props = { packets: PacketSummary[] };
+type Props = { packets: PacketSummary[]; onRefresh: () => void };
 
-export function Inbox({ packets }: Props) {
+export function Inbox({ packets, onRefresh }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
+  const [reclaimingId, setReclaimingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const { wallet, signer, openConnect } = useWallet();
   const now = Math.floor(Date.now() / 1000);
   const items: InboxItem[] = packets.map(p => {
     const open = p.slots_claimed < p.slots_total && p.unlock_time <= now && p.expiry > now;
@@ -38,6 +46,7 @@ export function Inbox({ packets }: Props) {
       status,
       variant: status === 'claimed' ? 'foil' : info.variant,
       kind: info.shortLabel,
+      expiry: p.expiry,
       meta:
         status === 'timed'
           ? `unlocks at ${new Date(p.unlock_time * 1000).toLocaleString()}`
@@ -54,6 +63,25 @@ export function Inbox({ packets }: Props) {
 
   const openItems = visible.filter(i => i.status === 'open' || i.status === 'timed');
   const pastItems = visible.filter(i => i.status === 'claimed' || i.status === 'expired');
+
+  const reclaim = async (item: InboxItem) => {
+    if (!wallet || !signer) {
+      openConnect();
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    setReclaimingId(item.id);
+    try {
+      const result = await buildAndRelayReclaimTx({ outPoint: item.id, signer });
+      setSuccess(`Reclaim submitted: ${result.txHash.slice(0, 14)}…${result.txHash.slice(-8)}`);
+      onRefresh();
+    } catch (e) {
+      setError(String(e).replace(/^Error:\s*/, ''));
+    } finally {
+      setReclaimingId(null);
+    }
+  };
 
   return (
     <div className="pckt-page">
@@ -87,6 +115,24 @@ export function Inbox({ packets }: Props) {
         </Chip>
       </div>
 
+      {(error || success) && (
+        <div style={{ padding: '12px 20px 0' }}>
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 12,
+              background: success ? 'rgba(74,138,92,.12)' : 'rgba(126,20,24,.08)',
+              border: `1px solid ${success ? 'rgba(74,138,92,.24)' : 'rgba(126,20,24,.16)'}`,
+              color: success ? 'var(--ok)' : 'var(--danger)',
+              fontSize: 12,
+              lineHeight: 1.5,
+            }}
+          >
+            {success || error}
+          </div>
+        </div>
+      )}
+
       {openItems.length > 0 && (
         <Section title="Open">
           {openItems.map(item => (
@@ -98,7 +144,13 @@ export function Inbox({ packets }: Props) {
       {pastItems.length > 0 && (
         <Section title="Past">
           {pastItems.map(item => (
-            <InboxRow key={item.id} item={item} />
+            <InboxRow
+              key={item.id}
+              item={item}
+              actionLabel={item.status === 'expired' ? 'Reclaim' : undefined}
+              actionLoading={reclaimingId === item.id}
+              onAction={item.status === 'expired' ? () => reclaim(item) : undefined}
+            />
           ))}
         </Section>
       )}
@@ -149,7 +201,19 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function InboxRow({ item, onClick }: { item: InboxItem; onClick?: () => void }) {
+function InboxRow({
+  item,
+  onClick,
+  onAction,
+  actionLabel,
+  actionLoading,
+}: {
+  item: InboxItem;
+  onClick?: () => void;
+  onAction?: () => void;
+  actionLabel?: string;
+  actionLoading?: boolean;
+}) {
   const clickable = !!onClick;
   const statusTint: Record<InboxItem['status'], { bg: string; fg: string; label: string }> = {
     open: { bg: 'rgba(126,20,24,.12)', fg: 'var(--crimson-600)', label: 'Open' },
@@ -256,7 +320,19 @@ function InboxRow({ item, onClick }: { item: InboxItem; onClick?: () => void }) 
       </div>
 
       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-        {item.amount ? (
+        {onAction && actionLabel ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={e => {
+              e.stopPropagation();
+              onAction();
+            }}
+            disabled={actionLoading}
+          >
+            {actionLoading ? 'Reclaiming…' : actionLabel}
+          </Button>
+        ) : item.amount ? (
           <div
             style={{
               fontFamily: 'var(--font-serif)',
