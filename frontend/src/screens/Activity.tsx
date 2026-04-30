@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Chip } from '../components/ui/Chip';
 import type { ClaimedPacket, PacketSummary } from '../api';
-import { ownerLabel, packetMoment, packetTypeInfo } from '../packets';
+import { ownerLabel, packetSealedAtMs, packetTypeInfo } from '../packets';
 
 type LedgerRow = {
   direction: 'in' | 'out';
@@ -39,7 +39,7 @@ export function Activity({
   const rows: LedgerRow[] = [
     ...sentPackets.map(p => {
       const kind = packetTypeInfo(p.packet_type).shortLabel;
-      const tsMs = (p.sealed_at ?? packetMoment(p)) * 1000;
+      const tsMs = packetSealedAtMs(p);
       const ageDays = (nowMs - tsMs) / 86400000;
       return {
         direction: 'out' as const,

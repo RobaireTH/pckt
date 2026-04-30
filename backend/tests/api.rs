@@ -198,9 +198,15 @@ async fn packets_list_collapses_successor_versions() {
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body = body_string(resp).await;
-    assert!(body.contains("\"out_point\":\"0xnewer:0\""), "body = {body}");
+    assert!(
+        body.contains("\"out_point\":\"0xnewer:0\""),
+        "body = {body}"
+    );
     assert!(body.contains("\"slots_claimed\":1"), "body = {body}");
-    assert!(!body.contains("\"out_point\":\"0xolder:0\""), "body = {body}");
+    assert!(
+        !body.contains("\"out_point\":\"0xolder:0\""),
+        "body = {body}"
+    );
 }
 
 #[tokio::test]

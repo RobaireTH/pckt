@@ -84,6 +84,13 @@ export function toCkb(shannons: bigint): number {
   return Number(shannons) / Number(SHANNONS);
 }
 
+export function packetSealedAtMs(packet: { sealed_at?: number; expiry: number; unlock_time: number }) {
+  if (typeof packet.sealed_at === 'number' && Number.isFinite(packet.sealed_at)) {
+    return packet.sealed_at;
+  }
+  return (packet.unlock_time > 0 ? packet.unlock_time : packet.expiry) * 1000;
+}
+
 export function ownerLabel(ownerLockHash?: string | null, fallback = 'unknown') {
   if (!ownerLockHash) return fallback;
   return `${ownerLockHash.slice(0, 6)}…${ownerLockHash.slice(-4)}`;

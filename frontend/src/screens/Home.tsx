@@ -4,7 +4,7 @@ import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
 import type { ClaimedPacket, PacketSummary } from '../api';
-import { ownerLabel, packetMoment, packetTypeInfo, toCkb } from '../packets';
+import { ownerLabel, packetMoment, packetSealedAtMs, packetTypeInfo, toCkb } from '../packets';
 
 type Props = {
   onSend: () => void;
@@ -60,7 +60,7 @@ export function Home({ onSend, onClaim, onOpenActivity, sentPackets, claimedPack
   const usd = walletBalanceCkb !== null && priceUsd ? (walletBalanceCkb * priceUsd).toFixed(2) : null;
   const ledger: LedgerRow[] = [
     ...sentPackets.map(p => {
-      const tsMs = (p.sealed_at ?? packetMoment(p)) * 1000;
+      const tsMs = packetSealedAtMs(p);
       return {
         direction: 'out' as const,
         title: p.message_body || packetTypeInfo(p.packet_type).label,
