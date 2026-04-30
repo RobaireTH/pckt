@@ -54,7 +54,7 @@ function defaultUnlock() {
 
 function initialDraft(): Draft {
   return {
-    type: 'lucky',
+    type: 'fixed',
     amount: '888',
     slots: 20,
     message: 'Fold · Seal · Send',

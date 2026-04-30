@@ -4,9 +4,16 @@ import { Icon } from '../components/ui/Icon';
 import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
-import { packetFloor, packetTypeInfo, toCkb } from '../packets';
+import {
+  SAFE_SLOT_PAYOUT_SHANNONS,
+  minimumFixedPacketAmount,
+  packetFloor,
+  packetTypeInfo,
+  toCkb,
+} from '../packets';
 import { buildAndRelaySealTx } from '../tx';
 import type { Draft } from './CreateAmount';
+const SHANNONS = 100_000_000n;
 
 type Props = {
   draft: Draft;
@@ -21,11 +28,26 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const { type, amount, slots, message, unlock } = draft;
   const numAmount = Number(amount) || 0;
+  const amountShannons = amount ? BigInt(amount) * SHANNONS : 0n;
   const avg = slots > 0 ? Math.max(1, Math.round(numAmount / slots)) : 0;
   const typeLabel = packetTypeInfo(type === 'fixed' ? 0 : type === 'lucky' ? 1 : 2).label;
   const reserveCkb = toCkb(packetFloor(slots, message));
   const totalNeededCkb = numAmount + reserveCkb;
+  const minPerSlotCkb = toCkb(SAFE_SLOT_PAYOUT_SHANNONS);
+  const minFixedTotalCkb = toCkb(minimumFixedPacketAmount(slots));
   const walletBalanceCkb = balance ? toCkb(balance) : null;
+  const luckyUnavailable = type === 'lucky';
+  const fixedTooSmall =
+    type !== 'lucky' && amountShannons > 0n && amountShannons < minimumFixedPacketAmount(slots);
+  const validationMessage = luckyUnavailable
+    ? 'Lucky split is temporarily unavailable on the current testnet contract because it can create unclaimable dust payouts.'
+    : fixedTooSmall
+    ? `This packet needs at least ${minFixedTotalCkb.toLocaleString(undefined, {
+        maximumFractionDigits: 2,
+      })} CKB total so each claim is at least ${minPerSlotCkb.toLocaleString(undefined, {
+        maximumFractionDigits: 2,
+      })} CKB.`
+    : null;
 
   const rows: Array<{ label: string; value: string; mono?: boolean }> = [
     { label: 'Type', value: typeLabel },
@@ -81,6 +103,10 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
     : 'A wallet is required to sign and lock funds';
 
   const sealNow = async () => {
+    if (validationMessage) {
+      setError(validationMessage);
+      return;
+    }
     if (!wallet || !signer || !lockHash) {
       openConnect();
       return;
@@ -227,8 +253,33 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
             </div>
           </section>
 
+          {validationMessage && (
+            <section style={{ padding: '20px 20px 0' }}>
+              <div
+                style={{
+                  padding: '12px 14px',
+                  background: 'rgba(126,20,24,.08)',
+                  border: '1px solid rgba(126,20,24,.18)',
+                  borderRadius: 12,
+                  fontSize: 12,
+                  color: 'var(--danger)',
+                  lineHeight: 1.5,
+                }}
+              >
+                {validationMessage}
+              </div>
+            </section>
+          )}
+
           <div className="pckt-create-mobile-cta" style={{ padding: '20px 20px 32px' }}>
-            <Button variant="primary" size="lg" full icon={sealIcon} onClick={sealNow} disabled={submitting}>
+            <Button
+              variant="primary"
+              size="lg"
+              full
+              icon={sealIcon}
+              onClick={sealNow}
+              disabled={submitting || !!validationMessage}
+            >
               {sealLabel}
             </Button>
             {error && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--crimson-600)' }}>{error}</div>}
@@ -276,7 +327,14 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
           >
             {typeLabel} · {slots} slots · {amount} CKB
           </div>
-          <Button variant="primary" size="lg" full icon={sealIcon} onClick={sealNow} disabled={submitting}>
+          <Button
+            variant="primary"
+            size="lg"
+            full
+            icon={sealIcon}
+            onClick={sealNow}
+            disabled={submitting || !!validationMessage}
+          >
             {sealLabel}
           </Button>
           <div

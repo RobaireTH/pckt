@@ -3,7 +3,13 @@ import { Button } from '../components/ui/Button';
 import { Packet } from '../components/Packet';
 import { fetchPacket, fetchPacketByPubkey, type PacketSummary } from '../api';
 import { useWallet } from '../hooks/useWallet';
-import { packetTypeInfo, predictClaimPayout, toCkb } from '../packets';
+import {
+  MIN_CLAIM_CELL_SHANNONS,
+  packetTypeInfo,
+  predictClaimPayout,
+  recipientCellCapacity,
+  toCkb,
+} from '../packets';
 import { buildAndRelayClaimTx } from '../tx';
 
 type Props = { onOpen: () => void; outPoint: string | null };
@@ -15,7 +21,7 @@ export function Claim({ onOpen, outPoint }: Props) {
   const [loading, setLoading] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [payout, setPayout] = useState<bigint | null>(null);
-  const { signer, wallet, openConnect } = useWallet();
+  const { signer, wallet, lockScript, openConnect } = useWallet();
 
   const h = window.location.hash.replace(/^#\/?/, '');
   const pathOnly = h.split('?')[0];
@@ -63,6 +69,16 @@ export function Claim({ onOpen, outPoint }: Props) {
   const remaining = packet ? Math.max(0, packet.slots_total - packet.slots_claimed) : 0;
   const totalCkb = packet ? Math.floor(Number(packet.current_capacity) / 100000000) : 0;
   const expectedCkb = payout ? toCkb(payout) : 0;
+  const minClaimShannons = lockScript ? recipientCellCapacity(lockScript) : MIN_CLAIM_CELL_SHANNONS;
+  const minClaimCkb = toCkb(minClaimShannons);
+  const claimCapacityError =
+    payout !== null && payout > 0n && payout < minClaimShannons
+      ? `This claim only unlocks ${expectedCkb.toLocaleString(undefined, {
+          maximumFractionDigits: 4,
+        })} CKB, but your wallet needs at least ${minClaimCkb.toLocaleString(undefined, {
+          maximumFractionDigits: 2,
+        })} CKB to create a live claim cell. This packet was sealed below the minimum claimable amount on the current testnet contract.`
+      : null;
   const previewAmount =
     expectedCkb > 0
       ? expectedCkb.toLocaleString(undefined, { maximumFractionDigits: 4 })
@@ -81,6 +97,10 @@ export function Claim({ onOpen, outPoint }: Props) {
     }
     if (!claimSk) {
       setError('Missing claim key in link');
+      return;
+    }
+    if (claimCapacityError) {
+      setError(claimCapacityError);
       return;
     }
     setClaiming(true);
@@ -139,7 +159,11 @@ export function Claim({ onOpen, outPoint }: Props) {
 
       <div style={{ marginTop: 36, width: '100%', maxWidth: 360 }}>
         {loading && <div style={{ textAlign: 'center', color: 'var(--fg-muted)', marginBottom: 12 }}>Loading claim details…</div>}
-        {error && <div style={{ textAlign: 'center', color: 'var(--danger)', marginBottom: 12 }}>{error}</div>}
+        {(error || claimCapacityError) && (
+          <div style={{ textAlign: 'center', color: 'var(--danger)', marginBottom: 12 }}>
+            {error || claimCapacityError}
+          </div>
+        )}
         {!opened ? (
           <>
             <Button
@@ -148,7 +172,7 @@ export function Claim({ onOpen, outPoint }: Props) {
               full
               icon="sparkle"
               onClick={claimNow}
-              disabled={claiming || loading}
+              disabled={claiming || loading || !!claimCapacityError}
             >
               {claiming ? 'Claiming…' : 'Open packet'}
             </Button>

@@ -3,7 +3,7 @@ import { Chip } from '../components/ui/Chip';
 import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
-import { packetFloor, toCkb } from '../packets';
+import { SAFE_SLOT_PAYOUT_SHANNONS, minimumFixedPacketAmount, packetFloor, toCkb } from '../packets';
 import { PacketType } from './CreateType';
 
 const amountPresets = ['88', '188', '888', '1888', '8888'];
@@ -14,6 +14,7 @@ const messagePresets = [
   { label: 'For luck', full: 'For luck' },
   { label: 'gm', full: 'gm' },
 ];
+const SHANNONS = 100_000_000n;
 
 export type Draft = {
   type: PacketType;
@@ -59,11 +60,26 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
   const { type, amount, slots, message, unlock } = draft;
   const { balance } = useWallet();
   const numAmount = Number(amount) || 0;
+  const amountShannons = amount ? BigInt(amount) * SHANNONS : 0n;
   const avg = slots > 0 ? Math.max(1, Math.round(numAmount / slots)) : 0;
   const reserveCkb = toCkb(packetFloor(slots, message));
   const totalNeededCkb = numAmount + reserveCkb;
+  const minPerSlotCkb = toCkb(SAFE_SLOT_PAYOUT_SHANNONS);
+  const minFixedTotalCkb = toCkb(minimumFixedPacketAmount(slots));
   const walletBalanceCkb = balance ? toCkb(balance) : null;
   const L = labels[type];
+  const luckyUnavailable = type === 'lucky';
+  const fixedTooSmall = type !== 'lucky' && amountShannons > 0n && amountShannons < minimumFixedPacketAmount(slots);
+  const validationMessage = luckyUnavailable
+    ? 'Lucky split is temporarily unavailable on the current testnet contract because it can create unclaimable dust payouts.'
+    : fixedTooSmall
+    ? `This packet needs at least ${minFixedTotalCkb.toLocaleString(undefined, {
+        maximumFractionDigits: 2,
+      })} CKB total so each claim is at least ${minPerSlotCkb.toLocaleString(undefined, {
+        maximumFractionDigits: 2,
+      })} CKB.`
+    : null;
+  const canReview = numAmount > 0 && !validationMessage;
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -186,6 +202,17 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
               {reserveCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })} CKB reserve stays
               in the packet cell for CKB storage
             </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--fg-quiet)',
+                marginTop: 6,
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              Fixed and timed packets should target at least{' '}
+              {minPerSlotCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })} CKB per claim.
+            </div>
             {walletBalanceCkb !== null && (
               <div
                 style={{
@@ -213,6 +240,22 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
                 </Chip>
               ))}
             </div>
+            {validationMessage && (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: '12px 14px',
+                  background: 'rgba(126,20,24,.08)',
+                  border: '1px solid rgba(126,20,24,.18)',
+                  borderRadius: 12,
+                  fontSize: 12,
+                  color: 'var(--danger)',
+                  lineHeight: 1.5,
+                }}
+              >
+                {validationMessage}
+              </div>
+            )}
           </section>
 
           <section
@@ -360,7 +403,7 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
               full
               iconRight="arrow_right"
               onClick={onReview}
-              disabled={numAmount === 0}
+              disabled={!canReview}
             >
               Review
             </Button>
@@ -378,7 +421,7 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
             width={260}
             height={368}
             amount={amount || '0'}
-            from="shen.bit"
+            from="your wallet"
             message={message}
             variant="crimson"
           />
@@ -417,7 +460,7 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
             full
             iconRight="arrow_right"
             onClick={onReview}
-            disabled={numAmount === 0}
+            disabled={!canReview}
           >
             Review &amp; seal
           </Button>

@@ -1,4 +1,11 @@
-import { bytesConcat, bytesFrom, hashCkb, type HexLike } from '@ckb-ccc/connector-react';
+import {
+  CellOutput,
+  bytesConcat,
+  bytesFrom,
+  hashCkb,
+  type HexLike,
+  type ScriptLike,
+} from '@ckb-ccc/connector-react';
 import type { PacketSummary } from './api';
 import {
   CELL_OVERHEAD_BYTES,
@@ -9,6 +16,8 @@ import {
 } from './molecule';
 
 const SHANNONS = 100_000_000n;
+export const MIN_CLAIM_CELL_SHANNONS = 63_000_000_000n;
+export const SAFE_SLOT_PAYOUT_SHANNONS = 70_000_000_000n;
 
 export type PacketTypeInfo = {
   label: string;
@@ -73,6 +82,14 @@ export function toBigInt(value: bigint | number | string): bigint {
 
 export function toCkb(shannons: bigint): number {
   return Number(shannons) / Number(SHANNONS);
+}
+
+export function recipientCellCapacity(lock: ScriptLike): bigint {
+  return BigInt(CellOutput.from({ lock }, '0x').capacity.toString());
+}
+
+export function minimumFixedPacketAmount(slotsTotal: number): bigint {
+  return SAFE_SLOT_PAYOUT_SHANNONS * BigInt(slotsTotal);
 }
 
 export function packetFloor(slotsTotal: number, messageBody?: string | null): bigint {
