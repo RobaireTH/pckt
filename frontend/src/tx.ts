@@ -140,7 +140,7 @@ export async function buildAndRelaySealTx(params: {
     depType: 'code',
     outPoint: { txHash: PCKT_LOCK.txHash, index: PCKT_LOCK.index },
   });
-  await tx.completeInputsByCapacity(signer, capacity);
+  await tx.completeInputsByCapacity(signer);
   await tx.completeFeeBy(signer);
   const signed = await signer.signTransaction(tx);
   const signedJson = toRpcTransaction(signed);
