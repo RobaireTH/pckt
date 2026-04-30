@@ -10,13 +10,17 @@ import { Inbox } from './screens/Inbox';
 import { Activity } from './screens/Activity';
 import { Profile } from './screens/Profile';
 import { AppShell } from './components/layout/AppShell';
+import { Button } from './components/ui/Button';
 import { useWallet } from './hooks/useWallet';
 import {
   fetchClaimedPackets,
   fetchCkbPrice,
   fetchPackets,
+  fetchSenderProfile,
+  saveSenderProfile,
   type ClaimedPacket,
   type PacketSummary,
+  type SenderProfile,
 } from './api';
 
 export type Route =
@@ -74,6 +78,11 @@ export function App() {
   const { wallet, lockHash } = useWallet();
   const [sentPackets, setSentPackets] = useState<PacketSummary[]>([]);
   const [claimedPackets, setClaimedPackets] = useState<ClaimedPacket[]>([]);
+  const [senderProfile, setSenderProfile] = useState<SenderProfile | null>(null);
+  const [profilePromptOpen, setProfilePromptOpen] = useState(false);
+  const [profileDraft, setProfileDraft] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [selectedOutPoint, setSelectedOutPoint] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [priceUsd, setPriceUsd] = useState<number | null>(null);
@@ -112,6 +121,43 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!lockHash) {
+      setSenderProfile(null);
+      setProfilePromptOpen(false);
+      setProfileDraft('');
+      setProfileError(null);
+      return;
+    }
+
+    fetchSenderProfile(lockHash).then(
+      profile => {
+        if (cancelled) return;
+        setSenderProfile(profile);
+        setProfileDraft(profile.username);
+        setProfilePromptOpen(false);
+        setProfileError(null);
+      },
+      err => {
+        if (cancelled) return;
+        const msg = String(err);
+        if (msg.includes('not found') || msg.includes('404')) {
+          setSenderProfile(null);
+          setProfileDraft('');
+          setProfilePromptOpen(true);
+          setProfileError(null);
+          return;
+        }
+        setProfileError(msg.replace(/^Error:\s*/, ''));
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lockHash]);
+
+  useEffect(() => {
+    let cancelled = false;
     fetchCkbPrice().then(
       p => {
         if (!cancelled) setPriceUsd(p.usd);
@@ -129,6 +175,31 @@ export function App() {
     window.location.hash = `#/${r}`;
   };
   const refreshPackets = () => setRefreshNonce(v => v + 1);
+  const saveProfileName = async () => {
+    if (!lockHash || !wallet?.address) return;
+    const username = profileDraft.trim();
+    if (username.length < 2 || username.length > 24) {
+      setProfileError('Username must be between 2 and 24 characters.');
+      return;
+    }
+    setProfileSaving(true);
+    setProfileError(null);
+    try {
+      const profile = await saveSenderProfile({
+        owner_lock_hash: lockHash,
+        sender_address: wallet.address,
+        username,
+      });
+      setSenderProfile(profile);
+      setProfileDraft(profile.username);
+      setProfilePromptOpen(false);
+      setRefreshNonce(v => v + 1);
+    } catch (e) {
+      setProfileError(String(e).replace(/^Error:\s*/, ''));
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   const onPatch = (p: Partial<Draft>) => setDraft(d => ({ ...d, ...p }));
   const setType = (t: PacketType) => onPatch({ type: t });
@@ -213,7 +284,85 @@ export function App() {
         <Activity sentPackets={sentPackets} claimedPackets={claimedPackets} />
       )}
       {route === 'me' && (
-        <Profile sentPackets={sentPackets} claimedPackets={claimedPackets} priceUsd={priceUsd} />
+        <Profile
+          sentPackets={sentPackets}
+          claimedPackets={claimedPackets}
+          priceUsd={priceUsd}
+          senderProfile={senderProfile}
+          onEditProfile={() => setProfilePromptOpen(true)}
+        />
+      )}
+      {profilePromptOpen && wallet && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(11,9,7,.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+            zIndex: 100,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 420,
+              background: 'var(--bg-elev)',
+              border: '1px solid var(--border)',
+              borderRadius: 18,
+              padding: 22,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: 'var(--font-serif)',
+                fontSize: 28,
+                letterSpacing: '-0.02em',
+                color: 'var(--fg)',
+              }}
+            >
+              {senderProfile ? 'Edit sender name' : 'Choose your sender name'}
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--fg-muted)', lineHeight: 1.55 }}>
+              This name is saved against your sender address in the app database and shown across
+              packet cards instead of a raw lock hash.
+            </div>
+            <input
+              value={profileDraft}
+              onChange={e => setProfileDraft(e.target.value.slice(0, 24))}
+              placeholder="e.g. shen.bit"
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                borderRadius: 12,
+                fontSize: 16,
+                color: 'var(--fg)',
+                outline: 'none',
+              }}
+            />
+            <div style={{ fontSize: 11, color: 'var(--fg-quiet)', fontFamily: 'var(--font-mono)' }}>
+              {wallet.address}
+            </div>
+            {profileError && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{profileError}</div>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              {senderProfile && (
+                <Button variant="ghost" size="lg" full onClick={() => setProfilePromptOpen(false)}>
+                  Cancel
+                </Button>
+              )}
+              <Button variant="primary" size="lg" full onClick={saveProfileName} disabled={profileSaving}>
+                {profileSaving ? 'Saving…' : 'Save name'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </AppShell>
   );

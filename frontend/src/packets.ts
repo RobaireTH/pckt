@@ -92,7 +92,18 @@ export function packetSealedAtMs(packet: { sealed_at?: number; expiry: number; u
   return (packet.unlock_time > 0 ? packet.unlock_time : packet.expiry) * 1000;
 }
 
-export function ownerLabel(ownerLockHash?: string | null, fallback = 'unknown') {
+export function ownerLabel(
+  ownerLockHash?: string | null,
+  fallback = 'unknown',
+  ownerAddress?: string | null,
+  ownerName?: string | null,
+) {
+  if (ownerName) return ownerName;
+  if (ownerAddress) {
+    return ownerAddress.length > 14
+      ? `${ownerAddress.slice(0, 8)}…${ownerAddress.slice(-6)}`
+      : ownerAddress;
+  }
   if (!ownerLockHash) return fallback;
   return `${ownerLockHash.slice(0, 6)}…${ownerLockHash.slice(-4)}`;
 }

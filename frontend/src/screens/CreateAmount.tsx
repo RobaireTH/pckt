@@ -3,6 +3,7 @@ import { Chip } from '../components/ui/Chip';
 import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
+import { formatDateTime } from '../locale';
 import { SAFE_SLOT_PAYOUT_SHANNONS, minimumFixedPacketAmount, packetFloor, toCkb } from '../packets';
 import { PacketType } from './CreateType';
 
@@ -444,12 +445,7 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
               label={type === 'timed' ? 'Unlocks' : 'Expires'}
               value={
                 type === 'timed'
-                  ? new Date(unlock).toLocaleString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
+                  ? formatDateTime(unlock)
                   : '7 days'
               }
             />

@@ -3,6 +3,7 @@ mod healthz;
 mod links;
 mod messages;
 mod packets;
+mod profiles;
 mod prices;
 mod relay;
 
@@ -31,9 +32,11 @@ pub fn router(state: &AppState) -> Router<AppState> {
         .route("/v1/packets/:outpoint", get(packets::get_one))
         .route("/v1/packets/:outpoint/events", get(packets::events))
         .route("/v1/packets/by-pubkey/:hash", get(packets::by_pubkey))
+        .route("/v1/profiles/:owner_lock_hash", get(profiles::get_one))
         .route("/l/:slug", get(links::redirect))
         .route("/v1/messages/:hash", get(messages::get))
         .route("/v1/prices/ckb", get(prices::ckb))
         .route("/v1/events/stream", get(events::stream))
         .merge(limited)
+        .route("/v1/profiles", post(profiles::upsert))
 }

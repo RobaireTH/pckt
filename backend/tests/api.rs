@@ -114,6 +114,40 @@ async fn empty_packets_list() {
 }
 
 #[tokio::test]
+async fn sender_profile_store_and_fetch() {
+    let app = build_app().await;
+
+    let save = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/profiles")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"owner_lock_hash":"0xowner","sender_address":"ckt1qexample","username":"shen.bit"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(save.status(), StatusCode::OK);
+
+    let fetch = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/profiles/0xowner")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(fetch.status(), StatusCode::OK);
+    let body = body_string(fetch).await;
+    assert!(body.contains("\"username\":\"shen.bit\""), "body = {body}");
+}
+
+#[tokio::test]
 async fn claimed_packets_list_filters_by_claimer() {
     let state = build_state().await;
 

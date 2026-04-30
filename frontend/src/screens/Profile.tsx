@@ -3,7 +3,12 @@ import { Avatar } from '../components/ui/Avatar';
 import { Button } from '../components/ui/Button';
 import { Icon, IconName } from '../components/ui/Icon';
 import { useWallet } from '../hooks/useWallet';
-import type { ClaimedPacket, PacketSummary } from '../api';
+import type { ClaimedPacket, PacketSummary, SenderProfile } from '../api';
+import {
+  LocalePreference,
+  readLocalePreference,
+  writeLocalePreference,
+} from '../locale';
 import { toCkb } from '../packets';
 
 type Theme = 'light' | 'dark';
@@ -16,13 +21,22 @@ export function Profile({
   sentPackets,
   claimedPackets,
   priceUsd,
+  senderProfile,
+  onEditProfile,
 }: {
   sentPackets: PacketSummary[];
   claimedPackets: ClaimedPacket[];
   priceUsd: number | null;
+  senderProfile: SenderProfile | null;
+  onEditProfile: () => void;
 }) {
   const { wallet, openConnect, disconnect, balance } = useWallet();
   const [theme, setTheme] = useState<Theme>(currentTheme);
+  const [locale, setLocale] = useState<LocalePreference>(readLocalePreference);
+  const [notificationState, setNotificationState] = useState<string>(
+    typeof Notification === 'undefined' ? 'Unsupported' : Notification.permission,
+  );
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
   const [copied, setCopied] = useState(false);
   const confirmTimer = useRef<number | null>(null);
@@ -47,6 +61,21 @@ export function Profile({
     };
   }, [confirmingDisconnect]);
 
+  useEffect(() => {
+    const sync = () => {
+      setLocale(readLocalePreference());
+      setNotificationState(
+        typeof Notification === 'undefined' ? 'Unsupported' : Notification.permission,
+      );
+    };
+    window.addEventListener('focus', sync);
+    window.addEventListener('pckt:locale-change', sync as EventListener);
+    return () => {
+      window.removeEventListener('focus', sync);
+      window.removeEventListener('pckt:locale-change', sync as EventListener);
+    };
+  }, []);
+
   const onDisconnectClick = () => {
     if (confirmingDisconnect) {
       disconnect();
@@ -65,6 +94,58 @@ export function Profile({
       },
       () => {},
     );
+  };
+  const cycleLanguage = () => {
+    const next: LocalePreference =
+      locale === 'system' ? 'en-US' : locale === 'en-US' ? 'en-GB' : 'system';
+    writeLocalePreference(next);
+    setLocale(next);
+    setActionNotice(
+      next === 'system'
+        ? 'Language set to your browser default.'
+        : `Language formatting set to ${next}.`,
+    );
+  };
+  const inviteFriend = async () => {
+    const url = `${window.location.origin}/#/landing`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'pckt', text: 'A friendly way to send ckb.', url });
+        setActionNotice('Invite link shared.');
+        return;
+      } catch {}
+    }
+    navigator.clipboard?.writeText(url).then(
+      () => setActionNotice('Invite link copied.'),
+      () => setActionNotice('Could not copy invite link.'),
+    );
+  };
+  const handleNotifications = async () => {
+    if (typeof Notification === 'undefined') {
+      setActionNotice('Notifications are not supported in this browser.');
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      setActionNotice('Notifications are already enabled.');
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      setActionNotice('Notifications are blocked in browser settings.');
+      return;
+    }
+    const result = await Notification.requestPermission();
+    setNotificationState(result);
+    setActionNotice(
+      result === 'granted'
+        ? 'Notifications enabled.'
+        : 'Notifications were not enabled.',
+    );
+  };
+  const openHelp = () => {
+    const subject = encodeURIComponent('pckt feedback');
+    const body = encodeURIComponent(`Share what happened:\n\nPage: ${window.location.href}\n\n`);
+    window.open(`mailto:robaireth@gmail.com?subject=${subject}&body=${body}`, '_blank');
+    setActionNotice('Opening your email app for feedback.');
   };
   const balanceCkb = balance ? toCkb(balance) : 0;
   const movedCkb = sentPackets.reduce(
@@ -124,8 +205,20 @@ export function Profile({
                   color: 'var(--fg)',
                 }}
               >
-                {wallet.shortAddress}
+                {senderProfile?.username || wallet.shortAddress}
               </div>
+              {senderProfile?.username && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: 'var(--fg-muted)',
+                    fontFamily: 'var(--font-mono)',
+                    marginTop: 4,
+                  }}
+                >
+                  {wallet.shortAddress}
+                </div>
+              )}
               <button
                 onClick={copyAddress}
                 style={{
@@ -291,12 +384,48 @@ export function Profile({
           }}
         >
           <ThemeRow theme={theme} onChange={setTheme} />
-          <Row icon="bell" title="Notifications" value="On" />
-          <Row icon="settings" title="Language" value="English" />
-          <Row icon="share" title="Invite a friend" cta="Share" />
-          <Row icon="search" title="Help & feedback" cta="Open" />
+          <Row
+            icon="user"
+            title="Sender name"
+            value={senderProfile?.username || 'Not set'}
+            cta={senderProfile ? 'Edit' : 'Set'}
+            onClick={onEditProfile}
+          />
+          <Row
+            icon="bell"
+            title="Notifications"
+            value={notificationState === 'default' ? 'Off' : notificationState === 'granted' ? 'On' : notificationState}
+            cta="Manage"
+            onClick={handleNotifications}
+          />
+          <Row
+            icon="settings"
+            title="Language"
+            value={locale === 'system' ? 'System' : locale}
+            cta="Switch"
+            onClick={cycleLanguage}
+          />
+          <Row icon="share" title="Invite a friend" cta="Share" onClick={inviteFriend} />
+          <Row icon="search" title="Help & feedback" cta="Email" onClick={openHelp} />
         </div>
       </section>
+      {actionNotice && (
+        <section style={{ padding: '14px 20px 0' }}>
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 12,
+              background: 'rgba(74,138,92,.10)',
+              border: '1px solid rgba(74,138,92,.18)',
+              fontSize: 12,
+              color: 'var(--fg)',
+              lineHeight: 1.5,
+            }}
+          >
+            {actionNotice}
+          </div>
+        </section>
+      )}
 
       {wallet && (
         <section style={{ padding: '24px 20px 40px' }}>

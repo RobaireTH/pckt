@@ -5,6 +5,7 @@ import { Chip } from '../components/ui/Chip';
 import { Packet } from '../components/Packet';
 import type { PacketSummary } from '../api';
 import { useWallet } from '../hooks/useWallet';
+import { formatDate, formatDateTime } from '../locale';
 import { ownerLabel, packetMoment, packetTypeInfo } from '../packets';
 import { buildAndRelayReclaimTx } from '../tx';
 
@@ -41,7 +42,7 @@ export function Inbox({ packets, onRefresh }: Props) {
     const info = packetTypeInfo(p.packet_type);
     return {
       id: p.out_point,
-      from: ownerLabel(p.owner_lock_hash, 'sender'),
+      from: ownerLabel(p.owner_lock_hash, 'sender', p.owner_address, p.owner_name),
       message: p.message_body || 'A packet for you',
       status,
       variant: status === 'claimed' ? 'foil' : info.variant,
@@ -49,9 +50,9 @@ export function Inbox({ packets, onRefresh }: Props) {
       expiry: p.expiry,
       meta:
         status === 'timed'
-          ? `unlocks at ${new Date(p.unlock_time * 1000).toLocaleString()}`
+          ? `unlocks at ${formatDateTime(p.unlock_time * 1000)}`
           : `${Math.max(0, p.slots_total - p.slots_claimed)} of ${p.slots_total} slots remain`,
-      when: new Date(packetMoment(p) * 1000).toLocaleDateString(),
+      when: formatDate(packetMoment(p) * 1000),
     };
   });
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Chip } from '../components/ui/Chip';
 import type { ClaimedPacket, PacketSummary } from '../api';
+import { formatDate } from '../locale';
 import { ownerLabel, packetSealedAtMs, packetTypeInfo } from '../packets';
 
 type LedgerRow = {
@@ -47,7 +48,7 @@ export function Activity({
         title: p.message_body || packetTypeInfo(p.packet_type).label,
         meta: `${kind} · ${p.slots_claimed}/${p.slots_total} claimed`,
         amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
-        at: new Date(tsMs).toLocaleDateString(),
+        at: formatDate(tsMs),
         group: ageGroup(ageDays),
       };
     }),
@@ -59,9 +60,9 @@ export function Activity({
         direction: 'in' as const,
         kind,
         title: p.message_body || packetTypeInfo(p.packet_type).label,
-        meta: `${kind} · from ${ownerLabel(p.owner_lock_hash, 'sender')}`,
+        meta: `${kind} · from ${ownerLabel(p.owner_lock_hash, 'sender', p.owner_address, p.owner_name)}`,
         amount: `+${slotCkb.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
-        at: new Date(p.claim_ts).toLocaleDateString(),
+        at: formatDate(p.claim_ts),
         group: ageGroup(ageDays),
       };
     }),

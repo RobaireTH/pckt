@@ -14,6 +14,8 @@ export type PacketSummary = {
   salt?: string;
   message_body?: string | null;
   sealed_at?: number;
+  owner_address?: string | null;
+  owner_name?: string | null;
 };
 
 export type PacketEvent = {
@@ -29,6 +31,12 @@ export type ClaimedPacket = PacketSummary & {
   claim_tx_hash: string;
   claim_ts: number;
   slot_amount: string | null;
+};
+
+export type SenderProfile = {
+  owner_lock_hash: string;
+  sender_address: string;
+  username: string;
 };
 
 type ApiErrorBody = {
@@ -83,6 +91,14 @@ export function fetchPacketByPubkey(hash: string): Promise<PacketSummary> {
 
 export function fetchClaimedPackets(claimerLockHash: string): Promise<ClaimedPacket[]> {
   return get(`/v1/packets/claimed?claimer=${encodeURIComponent(claimerLockHash)}`);
+}
+
+export function fetchSenderProfile(ownerLockHash: string): Promise<SenderProfile> {
+  return get(`/v1/profiles/${encodeURIComponent(ownerLockHash)}`);
+}
+
+export function saveSenderProfile(body: SenderProfile): Promise<SenderProfile> {
+  return post('/v1/profiles', body);
 }
 
 export function relayTransaction(signedTx: unknown): Promise<{ tx_hash: string }> {

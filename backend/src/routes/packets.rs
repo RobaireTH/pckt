@@ -3,6 +3,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 
 use crate::{
     error::{ApiError, ApiResult},
@@ -25,6 +26,8 @@ type SummaryRow = (
     Vec<u8>,
     Option<String>,
     i64,
+    Option<String>,
+    Option<String>,
 );
 type ListRow = (
     String,
@@ -40,33 +43,21 @@ type ListRow = (
     Vec<u8>,
     Option<String>,
     i64,
-    i64,
-);
-type ClaimedRow = (
-    String,
-    i64,
-    i64,
-    i64,
-    String,
-    String,
-    i64,
-    i64,
-    String,
-    String,
-    Vec<u8>,
+    Option<String>,
     Option<String>,
     i64,
-    String,
-    i64,
-    Option<String>,
 );
 type EventRow = (String, String, i64, i64, Option<String>, Option<String>);
 
 const SELECT_SUMMARY: &str = r#"
     SELECT out_point, packet_type, slots_total, slots_claimed,
            initial_capacity, current_capacity, expiry, unlock_time,
-           owner_lock_hash, claim_pubkey_hash, salt, message_body, sealed_at
+           packets.owner_lock_hash, claim_pubkey_hash, salt, message_body, sealed_at,
+           sender_profiles.sender_address AS owner_address,
+           sender_profiles.username AS owner_name
     FROM packets
+    LEFT JOIN sender_profiles
+      ON sender_profiles.owner_lock_hash = packets.owner_lock_hash
 "#;
 
 #[derive(Deserialize)]
@@ -94,6 +85,8 @@ pub struct PacketSummary {
     pub salt: String,
     pub message_body: Option<String>,
     pub sealed_at: u64,
+    pub owner_address: Option<String>,
+    pub owner_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -115,6 +108,28 @@ pub struct ClaimedPacket {
     pub slot_amount: Option<String>,
 }
 
+#[derive(FromRow)]
+struct ClaimedRow {
+    out_point: String,
+    packet_type: i64,
+    slots_total: i64,
+    slots_claimed: i64,
+    initial_capacity: String,
+    current_capacity: String,
+    expiry: i64,
+    unlock_time: i64,
+    owner_lock_hash: String,
+    claim_pubkey_hash: String,
+    salt: Vec<u8>,
+    message_body: Option<String>,
+    sealed_at: i64,
+    owner_address: Option<String>,
+    owner_name: Option<String>,
+    claim_tx_hash: String,
+    claim_ts: i64,
+    slot_amount: Option<String>,
+}
+
 fn row_to_summary(r: SummaryRow) -> PacketSummary {
     PacketSummary {
         out_point: r.0,
@@ -133,6 +148,8 @@ fn row_to_summary(r: SummaryRow) -> PacketSummary {
         ),
         message_body: r.11,
         sealed_at: r.12 as u64,
+        owner_address: r.13,
+        owner_name: r.14,
     }
 }
 
@@ -151,8 +168,12 @@ pub async fn list(
         SELECT p.out_point, p.packet_type, p.slots_total, p.slots_claimed,
                p.initial_capacity, p.current_capacity, p.expiry, p.unlock_time,
                p.owner_lock_hash, p.claim_pubkey_hash, p.salt, p.message_body, p.sealed_at,
+               sender_profiles.sender_address AS owner_address,
+               sender_profiles.username AS owner_name,
                p.last_seen_block
         FROM packets p
+        LEFT JOIN sender_profiles
+          ON sender_profiles.owner_lock_hash = p.owner_lock_hash
         JOIN latest l
           ON p.claim_pubkey_hash = l.claim_pubkey_hash
          AND p.last_seen_block = l.max_block
@@ -169,7 +190,7 @@ pub async fn list(
         rows.into_iter()
             .map(|r| {
                 row_to_summary((
-                    r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10, r.11, r.12,
+                    r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10, r.11, r.12, r.13, r.14,
                 ))
             })
             .collect(),
@@ -202,8 +223,12 @@ pub async fn claimed(
         SELECT p.out_point, p.packet_type, p.slots_total, p.slots_claimed,
                p.initial_capacity, p.current_capacity, p.expiry, p.unlock_time,
                p.owner_lock_hash, p.claim_pubkey_hash, p.salt, p.message_body, p.sealed_at,
-               e.tx_hash, e.ts, e.slot_amount
+               sender_profiles.sender_address AS owner_address,
+               sender_profiles.username AS owner_name,
+               e.tx_hash AS claim_tx_hash, e.ts AS claim_ts, e.slot_amount
         FROM packets p
+        LEFT JOIN sender_profiles
+          ON sender_profiles.owner_lock_hash = p.owner_lock_hash
         JOIN packet_events e ON e.out_point = p.out_point
         WHERE e.event_type = 'claim'
           AND e.claimer_lock_hash = ?1
@@ -221,11 +246,25 @@ pub async fn claimed(
         rows.into_iter()
             .map(|r| ClaimedPacket {
                 packet: row_to_summary((
-                    r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10, r.11, r.12,
+                    r.out_point,
+                    r.packet_type,
+                    r.slots_total,
+                    r.slots_claimed,
+                    r.initial_capacity,
+                    r.current_capacity,
+                    r.expiry,
+                    r.unlock_time,
+                    r.owner_lock_hash,
+                    r.claim_pubkey_hash,
+                    r.salt,
+                    r.message_body,
+                    r.sealed_at,
+                    r.owner_address,
+                    r.owner_name,
                 )),
-                claim_tx_hash: r.13,
-                claim_ts: r.14 as u64,
-                slot_amount: r.15,
+                claim_tx_hash: r.claim_tx_hash,
+                claim_ts: r.claim_ts as u64,
+                slot_amount: r.slot_amount,
             })
             .collect(),
     ))

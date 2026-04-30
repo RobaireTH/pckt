@@ -4,6 +4,7 @@ import { Icon } from '../components/ui/Icon';
 import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
+import { formatDateTime } from '../locale';
 import {
   SAFE_SLOT_PAYOUT_SHANNONS,
   minimumFixedPacketAmount,
@@ -72,13 +73,7 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
   if (type === 'timed') {
     rows.push({
       label: 'Unlocks',
-      value: new Date(unlock).toLocaleString(undefined, {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      value: formatDateTime(unlock),
     });
   } else {
     rows.push({ label: 'Expires', value: '7 days after send' });
