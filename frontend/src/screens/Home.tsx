@@ -3,13 +3,15 @@ import { Avatar } from '../components/ui/Avatar';
 import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
-import type { PacketSummary } from '../api';
+import type { ClaimedPacket, PacketSummary } from '../api';
 import { packetMoment, packetTypeInfo, toCkb } from '../packets';
 
 type Props = {
   onSend: () => void;
   onClaim: () => void;
-  packets: PacketSummary[];
+  onOpenActivity: () => void;
+  sentPackets: PacketSummary[];
+  claimedPackets: ClaimedPacket[];
   priceUsd: number | null;
 };
 
@@ -28,13 +30,14 @@ type LedgerRow = {
   meta: string;
   amount: string;
   at: string;
+  ts: number;
 };
 
-export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
+export function Home({ onSend, onClaim, onOpenActivity, sentPackets, claimedPackets, priceUsd }: Props) {
   const { wallet, openConnect, balance } = useWallet();
   const displayName = wallet?.shortAddress ?? 'Guest';
   const initials = wallet?.initials ?? '??';
-  const active: ActivePacket[] = packets.slice(0, 6).map(p => {
+  const active: ActivePacket[] = sentPackets.slice(0, 6).map(p => {
     const info = packetTypeInfo(p.packet_type);
     return {
       amount: String(Math.floor(Number(p.current_capacity) / 100000000)),
@@ -46,18 +49,35 @@ export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
     };
   });
   const walletBalanceCkb = balance ? toCkb(balance) : null;
-  const lockedCkb = packets.reduce(
+  const lockedCkb = sentPackets.reduce(
     (sum, p) => sum + Math.floor(Number(p.current_capacity) / 100000000),
     0,
   );
   const usd = walletBalanceCkb !== null && priceUsd ? (walletBalanceCkb * priceUsd).toFixed(2) : null;
-  const ledger: LedgerRow[] = packets.slice(0, 8).map(p => ({
-    direction: 'out',
-    title: packetTypeInfo(p.packet_type).label,
-    meta: `${p.slots_claimed}/${p.slots_total} claimed`,
-    amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
-    at: new Date(packetMoment(p) * 1000).toLocaleDateString(),
-  }));
+  const ledger: LedgerRow[] = [
+    ...sentPackets.map(p => ({
+      direction: 'out' as const,
+      title: p.message_body || packetTypeInfo(p.packet_type).label,
+      meta: `${packetTypeInfo(p.packet_type).shortLabel} · ${p.slots_claimed}/${p.slots_total} claimed`,
+      amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
+      at: new Date(packetMoment(p) * 1000).toLocaleDateString(),
+      ts: packetMoment(p),
+    })),
+    ...claimedPackets.map(p => {
+      const amount = p.slot_amount ? Number(p.slot_amount) / 100000000 : 0;
+      return {
+        direction: 'in' as const,
+        title: p.message_body || packetTypeInfo(p.packet_type).label,
+        meta: `${packetTypeInfo(p.packet_type).shortLabel} · from ${p.owner_lock_hash.slice(0, 6)}…${p.owner_lock_hash.slice(-4)}`,
+        amount: `+${amount.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
+        at: new Date(p.claim_ts * 1000).toLocaleDateString(),
+        ts: p.claim_ts,
+      };
+    }),
+  ]
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 8);
+  const activeLayout = active.length > 2 ? 'carousel' : 'grid';
 
   return (
     <div>
@@ -170,58 +190,83 @@ export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
                 margin: 0,
                 fontWeight: 400,
               }}
-            >
-              Active packets
-            </h2>
-            <div
-              style={{
-                fontSize: 11,
-                color: 'var(--fg-muted)',
-                fontFamily: 'var(--font-mono)',
-                letterSpacing: '.1em',
-                textTransform: 'uppercase',
-              }}
-            >
-              {active.length} open
-            </div>
+          >
+            Active packets
+          </h2>
+            {active.length > 0 ? (
+              <button
+                onClick={onClaim}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--fg-muted)',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-sans)',
+                }}
+              >
+                See all →
+              </button>
+            ) : (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: 'var(--fg-muted)',
+                  fontFamily: 'var(--font-mono)',
+                  letterSpacing: '.1em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                0 open
+              </div>
+            )}
           </div>
 
-          <div className="pckt-active-scroll">
-            {active.map((p, i) => (
-              <div
-                key={i}
-                className="pckt-active-card"
-                style={{ flexShrink: 0, width: 160, scrollSnapAlign: 'start' }}
-              >
-                <div style={{ aspectRatio: '160 / 226', width: '100%' }}>
-                  <Packet
-                    width={160}
-                    height={226}
-                    amount={p.amount}
-                    from={p.from}
-                    message={p.message}
-                    variant={p.variant}
-                    style={{ width: '100%', height: '100%' }}
-                  />
-                </div>
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 13, color: 'var(--fg)', fontWeight: 500 }}>
-                    {p.kind}
+          {active.length > 0 ? (
+            <div className="pckt-active-scroll" data-layout={activeLayout}>
+              {active.map((p, i) => (
+                <div
+                  key={i}
+                  className="pckt-active-card"
+                  style={{ flexShrink: 0, width: 160, scrollSnapAlign: 'start' }}
+                >
+                  <div style={{ aspectRatio: '160 / 226', width: '100%' }}>
+                    <Packet
+                      width={160}
+                      height={226}
+                      amount={p.amount}
+                      from={p.from}
+                      message={p.message}
+                      variant={p.variant}
+                      style={{ width: '100%', height: '100%' }}
+                    />
                   </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--fg-muted)',
-                      fontFamily: 'var(--font-mono)',
-                      marginTop: 2,
-                    }}
-                  >
-                    {p.meta}
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 13, color: 'var(--fg)', fontWeight: 500 }}>
+                      {p.kind}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--fg-muted)',
+                        fontFamily: 'var(--font-mono)',
+                        marginTop: 2,
+                      }}
+                    >
+                      {p.meta}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <SectionEmpty
+              title="No active packets yet"
+              body="Seal a packet and it will show up here while claims are still open."
+              cta="Send packet"
+              onClick={wallet ? onSend : openConnect}
+            />
+          )}
         </section>
 
         <section>
@@ -246,103 +291,155 @@ export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
             >
               Ledger
             </h2>
-            <button
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--fg-muted)',
-                fontSize: 12,
-                cursor: 'pointer',
-                fontFamily: 'var(--font-sans)',
-              }}
-            >
-              See all →
-            </button>
-          </div>
-
-          <div>
-            {ledger.map((row, i) => (
-              <div
-                key={i}
+            {ledger.length > 0 && (
+              <button
+                onClick={onOpenActivity}
                 style={{
-                  padding: '16px 20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 14,
-                  borderTop: '1px solid var(--border)',
-                  borderBottom: i === ledger.length - 1 ? '1px solid var(--border)' : 'none',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--fg-muted)',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-sans)',
                 }}
               >
+                See all →
+              </button>
+            )}
+          </div>
+
+          {ledger.length > 0 ? (
+            <div>
+              {ledger.map((row, i) => (
                 <div
+                  key={i}
                   style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    background:
-                      row.direction === 'in' ? 'rgba(74,138,92,.12)' : 'var(--accent-weak)',
+                    padding: '16px 20px',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    color: row.direction === 'in' ? 'var(--ok)' : 'var(--crimson-600)',
-                    flexShrink: 0,
-                    fontSize: 14,
-                    fontWeight: 600,
+                    gap: 14,
+                    borderTop: '1px solid var(--border)',
+                    borderBottom: i === ledger.length - 1 ? '1px solid var(--border)' : 'none',
                   }}
                 >
-                  {row.direction === 'in' ? '↓' : '↑'}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 10,
+                      background:
+                        row.direction === 'in' ? 'rgba(74,138,92,.12)' : 'var(--accent-weak)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: row.direction === 'in' ? 'var(--ok)' : 'var(--crimson-600)',
+                      flexShrink: 0,
                       fontSize: 14,
-                      fontWeight: 500,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
+                      fontWeight: 600,
                     }}
                   >
-                    {row.title}
+                    {row.direction === 'in' ? '↓' : '↑'}
                   </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: 'var(--fg-muted)',
-                      fontFamily: 'var(--font-mono)',
-                      marginTop: 2,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {row.meta}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 500,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {row.title}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--fg-muted)',
+                        fontFamily: 'var(--font-mono)',
+                        marginTop: 2,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {row.meta}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div
+                      style={{
+                        fontFamily: 'var(--font-serif)',
+                        fontSize: 20,
+                        color: row.direction === 'in' ? 'var(--ok)' : 'var(--fg)',
+                      }}
+                    >
+                      {row.amount}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--fg-quiet)',
+                        fontFamily: 'var(--font-mono)',
+                        marginTop: 2,
+                      }}
+                    >
+                      {row.at}
+                    </div>
                   </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div
-                    style={{
-                      fontFamily: 'var(--font-serif)',
-                      fontSize: 20,
-                      color: row.direction === 'in' ? 'var(--ok)' : 'var(--fg)',
-                    }}
-                  >
-                    {row.amount}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--fg-quiet)',
-                      fontFamily: 'var(--font-mono)',
-                      marginTop: 2,
-                    }}
-                  >
-                    {row.at}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <SectionEmpty
+              title="No history yet"
+              body="Claims you receive and packets you send will collect here as they happen."
+              cta={wallet ? 'Send packet' : 'Connect wallet'}
+              onClick={wallet ? onSend : openConnect}
+            />
+          )}
         </section>
       </div>
+    </div>
+  );
+}
+
+function SectionEmpty({
+  title,
+  body,
+  cta,
+  onClick,
+}: {
+  title: string;
+  body: string;
+  cta: string;
+  onClick: () => void;
+}) {
+  return (
+    <div className="pckt-empty-panel">
+      <div
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontSize: 22,
+          letterSpacing: '-0.02em',
+          color: 'var(--fg)',
+        }}
+      >
+        {title}
+      </div>
+      <div
+        style={{
+          fontSize: 14,
+          color: 'var(--fg-muted)',
+          lineHeight: 1.6,
+          maxWidth: 360,
+        }}
+      >
+        {body}
+      </div>
+      <Button variant="ghost" size="md" onClick={onClick}>
+        {cta}
+      </Button>
     </div>
   );
 }

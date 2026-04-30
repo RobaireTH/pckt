@@ -160,7 +160,9 @@ export function App() {
         <Home
           onSend={() => go('create')}
           onClaim={() => go('inbox')}
-          packets={sentPackets}
+          onOpenActivity={() => go('activity')}
+          sentPackets={sentPackets}
+          claimedPackets={claimedPackets}
           priceUsd={priceUsd}
         />
       )}
