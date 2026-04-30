@@ -49,7 +49,7 @@ export function Home({ onSend, onClaim, onOpenActivity, sentPackets, claimedPack
       kind: info.shortLabel,
       meta: `${p.slots_claimed} / ${p.slots_total} claimed`,
       variant: info.variant,
-      from: wallet?.shortAddress ?? ownerLabel(p.owner_lock_hash, 'sender', p.owner_address, p.owner_name),
+      from: ownerLabel(p.owner_lock_hash, 'sender', p.owner_address, p.owner_name),
       message: p.message_body || '',
     };
     });
