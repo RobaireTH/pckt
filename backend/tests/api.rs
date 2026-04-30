@@ -114,6 +114,58 @@ async fn empty_packets_list() {
 }
 
 #[tokio::test]
+async fn claimed_packets_list_filters_by_claimer() {
+    let state = build_state().await;
+
+    sqlx::query(
+        r#"
+        INSERT INTO packets (
+            out_point, packet_type, slots_total, slots_claimed,
+            initial_capacity, current_capacity, expiry, unlock_time,
+            owner_lock_hash, claim_pubkey_hash, salt, message_hash,
+            message_body, sealed_at, last_seen_block
+        ) VALUES
+            ('0xaaa:0', 0, 5, 1, '100', '90', 1000, 0, '0xowner-a', '0xpub-a', x'01', x'01', 'hello', 100, 1),
+            ('0xbbb:0', 1, 5, 2, '200', '120', 2000, 0, '0xowner-b', '0xpub-b', x'02', x'02', 'world', 200, 2)
+        "#
+    )
+    .execute(&state.db)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        r#"
+        INSERT INTO packet_events (
+            out_point, event_type, tx_hash, block_number, ts, claimer_lock_hash, slot_amount
+        ) VALUES
+            ('0xaaa:0', 'claim', '0xtx1', 10, 100, '0xclaimer', '20'),
+            ('0xbbb:0', 'claim', '0xtx2', 11, 101, '0xsomeone-else', '30')
+        "#,
+    )
+    .execute(&state.db)
+    .await
+    .unwrap();
+
+    let app = routes::router(&state).with_state(state);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/packets/claimed?claimer=0xclaimer")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_string(resp).await;
+    assert!(body.contains("\"out_point\":\"0xaaa:0\""), "body = {body}");
+    assert!(body.contains("\"message_body\":\"hello\""), "body = {body}");
+    assert!(body.contains("\"slot_amount\":\"20\""), "body = {body}");
+    assert!(!body.contains("\"out_point\":\"0xbbb:0\""), "body = {body}");
+}
+
+#[tokio::test]
 async fn missing_packet_404() {
     let app = build_app().await;
     let resp = app

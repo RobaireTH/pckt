@@ -11,7 +11,13 @@ import { Activity } from './screens/Activity';
 import { Profile } from './screens/Profile';
 import { AppShell } from './components/layout/AppShell';
 import { useWallet } from './hooks/useWallet';
-import { fetchCkbPrice, fetchPackets, type PacketSummary } from './api';
+import {
+  fetchClaimedPackets,
+  fetchCkbPrice,
+  fetchPackets,
+  type ClaimedPacket,
+  type PacketSummary,
+} from './api';
 
 export type Route =
   | 'landing'
@@ -66,7 +72,8 @@ export function App() {
   const [route, setRoute] = useState<Route>(parseRoute);
   const [draft, setDraft] = useState<Draft>(initialDraft);
   const { wallet, lockHash } = useWallet();
-  const [packets, setPackets] = useState<PacketSummary[]>([]);
+  const [sentPackets, setSentPackets] = useState<PacketSummary[]>([]);
+  const [claimedPackets, setClaimedPackets] = useState<ClaimedPacket[]>([]);
   const [selectedOutPoint, setSelectedOutPoint] = useState<string | null>(null);
   const [priceUsd, setPriceUsd] = useState<number | null>(null);
   const [lastSeal, setLastSeal] = useState<{
@@ -89,14 +96,14 @@ export function App() {
     // Backend indexes packets by the lock script hash (`owner_lock_hash`),
     // not the human-readable wallet address.
     const owner = lockHash ?? undefined;
-    fetchPackets(owner).then(
-      data => {
-        if (!cancelled) setPackets(data);
-      },
-      () => {
-        if (!cancelled) setPackets([]);
-      },
-    );
+    const sentReq = fetchPackets(owner);
+    const claimedReq = lockHash ? fetchClaimedPackets(lockHash) : Promise.resolve([]);
+    Promise.allSettled([sentReq, claimedReq]).then(results => {
+      if (cancelled) return;
+      const [sent, claimed] = results;
+      setSentPackets(sent.status === 'fulfilled' ? sent.value : []);
+      setClaimedPackets(claimed.status === 'fulfilled' ? claimed.value : []);
+    });
     return () => {
       cancelled = true;
     };
@@ -153,7 +160,7 @@ export function App() {
         <Home
           onSend={() => go('create')}
           onClaim={() => go('inbox')}
-          packets={packets}
+          packets={sentPackets}
           priceUsd={priceUsd}
         />
       )}
@@ -197,9 +204,13 @@ export function App() {
         />
       )}
       {route === 'claim' && <Claim onOpen={() => go('app')} outPoint={selectedOutPoint} />}
-      {route === 'inbox' && <Inbox packets={packets} />}
-      {route === 'activity' && <Activity packets={packets} />}
-      {route === 'me' && <Profile packets={packets} priceUsd={priceUsd} />}
+      {route === 'inbox' && <Inbox packets={sentPackets} />}
+      {route === 'activity' && (
+        <Activity sentPackets={sentPackets} claimedPackets={claimedPackets} />
+      )}
+      {route === 'me' && (
+        <Profile sentPackets={sentPackets} claimedPackets={claimedPackets} priceUsd={priceUsd} />
+      )}
     </AppShell>
   );
 }

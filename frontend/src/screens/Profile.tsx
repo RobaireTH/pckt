@@ -3,7 +3,7 @@ import { Avatar } from '../components/ui/Avatar';
 import { Button } from '../components/ui/Button';
 import { Icon, IconName } from '../components/ui/Icon';
 import { useWallet } from '../hooks/useWallet';
-import type { PacketSummary } from '../api';
+import type { ClaimedPacket, PacketSummary } from '../api';
 import { toCkb } from '../packets';
 
 type Theme = 'light' | 'dark';
@@ -12,7 +12,15 @@ function currentTheme(): Theme {
   return document.documentElement.classList.contains('theme-dark') ? 'dark' : 'light';
 }
 
-export function Profile({ packets, priceUsd }: { packets: PacketSummary[]; priceUsd: number | null }) {
+export function Profile({
+  sentPackets,
+  claimedPackets,
+  priceUsd,
+}: {
+  sentPackets: PacketSummary[];
+  claimedPackets: ClaimedPacket[];
+  priceUsd: number | null;
+}) {
   const { wallet, openConnect, disconnect, balance } = useWallet();
   const [theme, setTheme] = useState<Theme>(currentTheme);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
@@ -59,7 +67,10 @@ export function Profile({ packets, priceUsd }: { packets: PacketSummary[]; price
     );
   };
   const balanceCkb = balance ? toCkb(balance) : 0;
-  const movedCkb = packets.reduce((sum, p) => sum + Math.floor(Number(p.initial_capacity) / 100000000), 0);
+  const movedCkb = sentPackets.reduce(
+    (sum, p) => sum + Math.floor(Number(p.initial_capacity) / 100000000),
+    0,
+  );
 
   return (
     <div className="pckt-page">
@@ -219,12 +230,8 @@ export function Profile({ packets, priceUsd }: { packets: PacketSummary[]; price
                 overflow: 'hidden',
               }}
             >
-              <Stat label="Sent" value={String(packets.length)} sub="packets" />
-              <Stat
-                label="Claimed"
-                value={String(packets.filter(p => p.slots_claimed > 0).length)}
-                sub="packets"
-              />
+              <Stat label="Sent" value={String(sentPackets.length)} sub="packets" />
+              <Stat label="Claimed" value={String(claimedPackets.length)} sub="packets" />
               <Stat label="Moved" value={`${movedCkb.toLocaleString()}`} sub="CKB" />
             </div>
           </section>

@@ -24,6 +24,12 @@ export type PacketEvent = {
   slot_amount: string | null;
 };
 
+export type ClaimedPacket = PacketSummary & {
+  claim_tx_hash: string;
+  claim_ts: number;
+  slot_amount: string | null;
+};
+
 type ApiErrorBody = {
   error?: string;
   message?: string;
@@ -72,6 +78,10 @@ export function fetchPacketEvents(outPoint: string): Promise<PacketEvent[]> {
 
 export function fetchPacketByPubkey(hash: string): Promise<PacketSummary> {
   return get(`/v1/packets/by-pubkey/${encodeURIComponent(hash)}`);
+}
+
+export function fetchClaimedPackets(claimerLockHash: string): Promise<ClaimedPacket[]> {
+  return get(`/v1/packets/claimed?claimer=${encodeURIComponent(claimerLockHash)}`);
 }
 
 export function relayTransaction(signedTx: unknown): Promise<{ tx_hash: string }> {

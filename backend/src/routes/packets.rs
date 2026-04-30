@@ -25,6 +25,23 @@ type SummaryRow = (
     Vec<u8>,
     Option<String>,
 );
+type ClaimedRow = (
+    String,
+    i64,
+    i64,
+    i64,
+    String,
+    String,
+    i64,
+    i64,
+    String,
+    String,
+    Vec<u8>,
+    Option<String>,
+    String,
+    i64,
+    Option<String>,
+);
 type EventRow = (String, String, i64, i64, Option<String>, Option<String>);
 
 const SELECT_SUMMARY: &str = r#"
@@ -37,6 +54,11 @@ const SELECT_SUMMARY: &str = r#"
 #[derive(Deserialize)]
 pub struct ListQuery {
     pub owner: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ClaimedQuery {
+    pub claimer: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -62,6 +84,15 @@ pub struct PacketEvent {
     pub block_number: u64,
     pub ts: u64,
     pub claimer_lock_hash: Option<String>,
+    pub slot_amount: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ClaimedPacket {
+    #[serde(flatten)]
+    pub packet: PacketSummary,
+    pub claim_tx_hash: String,
+    pub claim_ts: u64,
     pub slot_amount: Option<String>,
 }
 
@@ -113,6 +144,48 @@ pub async fn get_one(
         .await?
         .ok_or(ApiError::NotFound)?;
     Ok(Json(row_to_summary(row)))
+}
+
+pub async fn claimed(
+    State(state): State<AppState>,
+    Query(q): Query<ClaimedQuery>,
+) -> ApiResult<Json<Vec<ClaimedPacket>>> {
+    let claimer = q.claimer.unwrap_or_default();
+    if claimer.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+
+    let sql = r#"
+        SELECT p.out_point, p.packet_type, p.slots_total, p.slots_claimed,
+               p.initial_capacity, p.current_capacity, p.expiry, p.unlock_time,
+               p.owner_lock_hash, p.claim_pubkey_hash, p.salt, p.message_body,
+               e.tx_hash, e.ts, e.slot_amount
+        FROM packets p
+        JOIN packet_events e ON e.out_point = p.out_point
+        WHERE e.event_type = 'claim'
+          AND e.claimer_lock_hash = ?1
+        ORDER BY e.ts DESC, e.id DESC
+        LIMIT ?2
+    "#;
+
+    let rows: Vec<ClaimedRow> = sqlx::query_as(sql)
+        .bind(&claimer)
+        .bind(LIST_LIMIT)
+        .fetch_all(&state.db)
+        .await?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| ClaimedPacket {
+                packet: row_to_summary((
+                    r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10, r.11,
+                )),
+                claim_tx_hash: r.12,
+                claim_ts: r.13 as u64,
+                slot_amount: r.14,
+            })
+            .collect(),
+    ))
 }
 
 pub async fn by_pubkey(

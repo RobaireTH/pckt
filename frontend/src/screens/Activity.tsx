@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Chip } from '../components/ui/Chip';
-import type { PacketSummary } from '../api';
+import type { ClaimedPacket, PacketSummary } from '../api';
 import { packetMoment, packetTypeInfo } from '../packets';
 
 type LedgerRow = {
@@ -10,7 +10,6 @@ type LedgerRow = {
   meta: string;
   amount: string;
   at: string;
-  hasClaims: boolean;
   group: 'today' | 'week' | 'earlier';
 };
 
@@ -22,34 +21,61 @@ const groupLabels: Record<LedgerRow['group'], string> = {
   earlier: 'Earlier',
 };
 
-export function Activity({ packets }: { packets: PacketSummary[] }) {
+function ageGroup(ageDays: number): LedgerRow['group'] {
+  if (ageDays < 1) return 'today';
+  if (ageDays < 7) return 'week';
+  return 'earlier';
+}
+
+export function Activity({
+  sentPackets,
+  claimedPackets,
+}: {
+  sentPackets: PacketSummary[];
+  claimedPackets: ClaimedPacket[];
+}) {
   const [filter, setFilter] = useState<Filter>('all');
   const now = Date.now() / 1000;
-  const rows: LedgerRow[] = packets.map(p => {
-    const kind = packetTypeInfo(p.packet_type).shortLabel;
-    const ageDays = (now - packetMoment(p)) / 86400;
-    return {
-      direction: 'out',
-      kind,
-      title: packetTypeInfo(p.packet_type).label,
-      meta: `${p.slots_claimed}/${p.slots_total} claimed`,
-      amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
-      at: new Date(packetMoment(p) * 1000).toLocaleDateString(),
-      hasClaims: p.slots_claimed > 0,
-      group: ageDays < 1 ? 'today' : ageDays < 7 ? 'week' : 'earlier',
-    };
-  });
+  const rows: LedgerRow[] = [
+    ...sentPackets.map(p => {
+      const kind = packetTypeInfo(p.packet_type).shortLabel;
+      const ageDays = (now - packetMoment(p)) / 86400;
+      return {
+        direction: 'out' as const,
+        kind,
+        title: p.message_body || packetTypeInfo(p.packet_type).label,
+        meta: `${kind} · ${p.slots_claimed}/${p.slots_total} claimed`,
+        amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
+        at: new Date(packetMoment(p) * 1000).toLocaleDateString(),
+        group: ageGroup(ageDays),
+      };
+    }),
+    ...claimedPackets.map(p => {
+      const kind = packetTypeInfo(p.packet_type).shortLabel;
+      const ageDays = (now - p.claim_ts) / 86400;
+      const slotCkb = p.slot_amount ? Number(p.slot_amount) / 100000000 : 0;
+      return {
+        direction: 'in' as const,
+        kind,
+        title: p.message_body || packetTypeInfo(p.packet_type).label,
+        meta: `${kind} · from ${p.owner_lock_hash.slice(0, 6)}…${p.owner_lock_hash.slice(-4)}`,
+        amount: `+${slotCkb.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
+        at: new Date(p.claim_ts * 1000).toLocaleDateString(),
+        group: ageGroup(ageDays),
+      };
+    }),
+  ];
 
   const visible = rows.filter(r => {
     if (filter === 'sent') return r.direction === 'out';
-    if (filter === 'claimed') return r.hasClaims;
+    if (filter === 'claimed') return r.direction === 'in';
     return true;
   });
 
   const totalSent = rows
     .filter(r => r.direction === 'out')
     .reduce((sum, r) => sum + Number(r.amount.replace(/[^\d-]/g, '')), 0);
-  const claimedPackets = rows.filter(r => r.hasClaims).length;
+  const claimedCount = claimedPackets.length;
 
   const groups: LedgerRow['group'][] = ['today', 'week', 'earlier'];
 
@@ -69,7 +95,7 @@ export function Activity({ packets }: { packets: PacketSummary[] }) {
           Activity
         </h1>
         <p style={{ fontSize: 14, color: 'var(--fg-muted)', margin: '6px 0 0' }}>
-          Live history for the packets you've sealed.
+          Live history for the packets you've sealed and the packets you've claimed.
         </p>
       </header>
 
@@ -86,7 +112,7 @@ export function Activity({ packets }: { packets: PacketSummary[] }) {
           }}
         >
           <Summary label="Sent" value={`${Math.abs(totalSent).toLocaleString()} CKB`} />
-          <Summary label="Claimed" value={`${claimedPackets.toLocaleString()} packets`} tint="ok" />
+          <Summary label="Claimed" value={`${claimedCount.toLocaleString()} packets`} tint="ok" />
         </div>
       </section>
 
