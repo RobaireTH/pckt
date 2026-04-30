@@ -190,7 +190,7 @@ export async function buildAndRelayClaimTx(params: {
       previousOutput: op,
       since:
         Number(pd.packet_type) >= 2
-          ? 0x4000000000000000n | BigInt(Math.floor(Date.now() / 1000))
+          ? 0x4000000000000000n | toBigInt(pd.unlock_time)
           : 0,
     }],
     headerDeps: [tipHash],

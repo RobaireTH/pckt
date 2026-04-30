@@ -26,9 +26,13 @@ pckt-schema = { path = "../pckt-schema" }
 molecule = { version = "0.8" }
 hex = "0.4"
 bech32 = "0.11"
+blake2b-ref = "0.3"
+secp256k1 = { version = "0.29", default-features = false, features = ["recovery", "alloc"] }
 
 [dev-dependencies]
 ckb-testtool = "0.13"
 pckt-schema = { path = "../pckt-schema" }
 molecule = { version = "0.8" }
 hex = "0.4"
+blake2b-ref = "0.3"
+secp256k1 = { version = "0.29", default-features = false, features = ["recovery", "alloc"] }

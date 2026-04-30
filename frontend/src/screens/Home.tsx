@@ -18,6 +18,8 @@ type ActivePacket = {
   kind: string;
   meta: string;
   variant: 'crimson' | 'ink' | 'foil';
+  from: string;
+  message: string;
 };
 
 type LedgerRow = {
@@ -39,6 +41,8 @@ export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
       kind: info.shortLabel,
       meta: `${p.slots_claimed} / ${p.slots_total} claimed`,
       variant: info.variant,
+      from: wallet?.shortAddress ?? `${p.owner_lock_hash.slice(0, 6)}…${p.owner_lock_hash.slice(-4)}`,
+      message: p.message_body || '',
     };
   });
   const walletBalanceCkb = balance ? toCkb(balance) : null;
@@ -190,7 +194,15 @@ export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
                 style={{ flexShrink: 0, width: 160, scrollSnapAlign: 'start' }}
               >
                 <div style={{ aspectRatio: '160 / 226', width: '100%' }}>
-                  <Packet width={160} height={226} amount={p.amount} variant={p.variant} style={{ width: '100%', height: '100%' }} />
+                  <Packet
+                    width={160}
+                    height={226}
+                    amount={p.amount}
+                    from={p.from}
+                    message={p.message}
+                    variant={p.variant}
+                    style={{ width: '100%', height: '100%' }}
+                  />
                 </div>
                 <div style={{ marginTop: 10 }}>
                   <div style={{ fontSize: 13, color: 'var(--fg)', fontWeight: 500 }}>

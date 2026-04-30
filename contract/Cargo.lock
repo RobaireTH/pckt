@@ -1379,10 +1379,12 @@ name = "pckt-tests"
 version = "0.1.0"
 dependencies = [
  "bech32",
+ "blake2b-ref",
  "ckb-testtool",
  "hex",
  "molecule",
  "pckt-schema",
+ "secp256k1",
 ]
 
 [[package]]

@@ -125,19 +125,15 @@ fn verify_successor(pd: &PacketData, claim: &Claim, payout: u64) -> Result<(), E
     let total = byte_to_u8(pd.slots_total());
     let claimed = byte_to_u8(pd.slots_claimed());
     let last_slot = claimed + 1 == total;
-
-    let group_out_count = count_group_outputs();
+    let succ_index = find_unique_successor_output_index()?;
     if last_slot {
-        if group_out_count != 0 {
+        if succ_index.is_some() {
             return Err(Error::UnexpectedSuccessor);
         }
         return Ok(());
     }
-    if group_out_count != 1 {
-        return Err(Error::SuccessorMissing);
-    }
-
-    let succ_data = load_cell_data(0, Source::GroupOutput).map_err(|_| Error::SuccessorMissing)?;
+    let succ_index = succ_index.ok_or(Error::SuccessorMissing)?;
+    let succ_data = load_cell_data(succ_index, Source::Output).map_err(|_| Error::SuccessorMissing)?;
     let succ = PacketData::from_slice(&succ_data).map_err(|_| Error::SuccessorBadData)?;
 
     if pd.version().as_slice() != succ.version().as_slice()
@@ -180,7 +176,7 @@ fn verify_successor(pd: &PacketData, claim: &Claim, payout: u64) -> Result<(), E
     let input_cap =
         load_cell_capacity(0, Source::GroupInput).map_err(|_| Error::CapacityLoadFailed)?;
     let succ_cap =
-        load_cell_capacity(0, Source::GroupOutput).map_err(|_| Error::CapacityLoadFailed)?;
+        load_cell_capacity(succ_index, Source::Output).map_err(|_| Error::CapacityLoadFailed)?;
     if succ_cap
         != input_cap
             .checked_sub(payout)
@@ -192,15 +188,23 @@ fn verify_successor(pd: &PacketData, claim: &Claim, payout: u64) -> Result<(), E
     Ok(())
 }
 
-fn count_group_outputs() -> usize {
-    let mut count = 0;
+fn find_unique_successor_output_index() -> Result<Option<usize>, Error> {
+    let input_lock_hash = load_cell_lock_hash(0, Source::GroupInput).map_err(|_| Error::NoInput)?;
+    let mut found = None;
     for idx in 0.. {
-        match load_cell_capacity(idx, Source::GroupOutput) {
-            Ok(_) => count += 1,
+        let output_lock_hash = match load_cell_lock_hash(idx, Source::Output) {
+            Ok(hash) => hash,
             Err(_) => break,
+        };
+        if output_lock_hash.as_ref() != input_lock_hash.as_ref() {
+            continue;
         }
+        if found.is_some() {
+            return Err(Error::UnexpectedSuccessor);
+        }
+        found = Some(idx);
     }
-    count
+    Ok(found)
 }
 
 fn max_floor(pd: &PacketData) -> u64 {
@@ -290,7 +294,7 @@ fn reclaim_path(pd: &PacketData) -> Result<(), Error> {
         return Err(Error::OwnerInputMissing);
     }
 
-    if count_group_outputs() != 0 {
+    if find_unique_successor_output_index()?.is_some() {
         return Err(Error::ReclaimWithSuccessor);
     }
 
@@ -351,13 +355,12 @@ fn verify_claim_signature(pd: &PacketData, claim: &Claim) -> Result<(), Error> {
     if sig_slice.len() != 65 {
         return Err(Error::BadSignature);
     }
-    let recovery_id = RecoveryId::try_from(sig_slice[64]).map_err(|_| Error::BadSignature)?;
     let signature = Signature::from_slice(&sig_slice[..64]).map_err(|_| Error::BadSignature)?;
-    let key = VerifyingKey::recover_from_prehash(&msg, &signature, recovery_id)
+    let recovery_id = RecoveryId::from_byte(sig_slice[64]).ok_or(Error::BadSignature)?;
+    let recovered = VerifyingKey::recover_from_prehash(&msg, &signature, recovery_id)
         .map_err(|_| Error::BadSignature)?;
-    let recovered = key.to_encoded_point(true);
-    let recovered_bytes = recovered.as_bytes();
-    if recovered_bytes != pd.claim_pubkey().as_slice() {
+    let encoded = recovered.to_encoded_point(true);
+    if encoded.as_bytes() != pd.claim_pubkey().as_slice() {
         return Err(Error::SignaturePubkeyMismatch);
     }
     Ok(())

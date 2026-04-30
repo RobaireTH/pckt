@@ -11,12 +11,15 @@ use pckt_schema::{
     Byte16, Byte32, Byte32Vec, Byte33, Bytes as MolBytes, Claim, PacketAction, PacketData,
     PacketWitness, Reclaim, Uint64,
 };
+use blake2b_ref::Blake2bBuilder;
+use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 
 const MAX_CYCLES: u64 = 70_000_000;
 const PCKT_LOCK_BIN: &[u8] =
     include_bytes!("../../target/riscv64imac-unknown-none-elf/release/pckt-lock");
 
 const SINCE_FLAG_ABS_TS: u64 = 0x4000_0000_0000_0000;
+const BLAKE_PERSONAL: &[u8] = b"ckb-default-hash";
 
 fn uint64_mol(v: u64) -> Uint64 {
     let bytes = v.to_le_bytes();
@@ -138,6 +141,34 @@ fn script_hash_bytes(s: &ckb_testtool::ckb_types::packed::Script) -> [u8; 32] {
     let h = s.calc_script_hash();
     let mut out = [0u8; 32];
     out.copy_from_slice(h.as_slice());
+    out
+}
+
+fn blake256_2(a: &[u8], b: &[u8]) -> [u8; 32] {
+    let mut hasher = Blake2bBuilder::new(32).personal(BLAKE_PERSONAL).build();
+    hasher.update(a);
+    hasher.update(b);
+    let mut out = [0u8; 32];
+    hasher.finalize(&mut out);
+    out
+}
+
+fn claim_keypair(secret: [u8; 32]) -> (SecretKey, [u8; 33]) {
+    let sk = SecretKey::from_slice(&secret).expect("secret key");
+    let secp = Secp256k1::signing_only();
+    let pk = PublicKey::from_secret_key(&secp, &sk).serialize();
+    (sk, pk)
+}
+
+fn sign_claim(out_point_bytes: &[u8], claimer_lock_hash: [u8; 32], secret: &SecretKey) -> [u8; 65] {
+    let msg = blake256_2(out_point_bytes, &claimer_lock_hash);
+    let message = Message::from_digest_slice(&msg).expect("message");
+    let secp = Secp256k1::signing_only();
+    let sig = secp.sign_ecdsa_recoverable(&message, secret);
+    let (recid, compact) = sig.serialize_compact();
+    let mut out = [0u8; 65];
+    out[..64].copy_from_slice(&compact);
+    out[64] = recid.to_i32() as u8;
     out
 }
 
@@ -483,5 +514,285 @@ fn rejects_claim_with_unsignable_pubkey() {
     assert!(
         msg.contains("error code 40") || msg.contains("error code 41"),
         "expected BadSignature (40) or PubkeyMismatch (41), got: {msg}"
+    );
+}
+
+#[test]
+fn claim_happy_path_fixed_packet() {
+    let mut env = TestEnv::new();
+    let owner = env.always_script();
+    let owner_hash = script_hash_bytes(&owner);
+
+    let salt = [0x55u8; 16];
+    let (claim_secret, claim_pubkey) = claim_keypair([7u8; 32]);
+    let claimer_lock = env.always_script();
+    let claimer_hash = script_hash_bytes(&claimer_lock);
+
+    let input_capacity = 100_000_000_000u64;
+    let payout = 10_000_000_000u64;
+    let pd = PdBuilder {
+        version: 1,
+        packet_type: 0,
+        slots_total: 5,
+        slots_claimed: 0,
+        expiry: 9_999_999_999,
+        unlock_time: 0,
+        initial_capacity: 50_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey,
+        salt,
+        ..Default::default()
+    }
+    .build();
+
+    let pckt = env.pckt_script(salt);
+    let previous_output = env.ctx.create_cell(
+        CellOutput::new_builder()
+            .capacity(input_capacity.pack())
+            .lock(pckt.clone())
+            .build(),
+        pd.as_bytes(),
+    );
+    let packet_input = CellInput::new_builder()
+        .previous_output(previous_output.clone())
+        .since(0u64.pack())
+        .build();
+
+    let mut next_claims = Vec::new();
+    next_claims.push(claimer_hash);
+    let next_pd = PdBuilder {
+        version: 1,
+        packet_type: 0,
+        slots_total: 5,
+        slots_claimed: 1,
+        expiry: 9_999_999_999,
+        unlock_time: 0,
+        initial_capacity: 50_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey,
+        salt,
+        claimed_locks: next_claims,
+        ..Default::default()
+    }
+    .build();
+
+    let sig = sign_claim(previous_output.as_slice(), claimer_hash, &claim_secret);
+    let witness = claim_witness_bytes(sig, claimer_hash);
+    let tx = TransactionBuilder::default()
+        .input(packet_input)
+        .output(
+            CellOutput::new_builder()
+                .capacity(payout.pack())
+                .lock(claimer_lock)
+                .build(),
+        )
+        .output_data(Bytes::new().pack())
+        .output(
+            CellOutput::new_builder()
+                .capacity((input_capacity - payout).pack())
+                .lock(pckt)
+                .build(),
+        )
+        .output_data(Bytes::copy_from_slice(next_pd.as_slice()).pack())
+        .witness(witness.pack())
+        .build();
+    assert_eq!(tx.outputs().len(), 2);
+    assert_eq!(tx.outputs_data().len(), 2);
+    let tx = env.ctx.complete_tx(tx);
+    env.ctx.verify_tx(&tx, MAX_CYCLES).expect("claim passes");
+}
+
+#[test]
+fn timed_claim_before_unlock_rejected() {
+    let mut env = TestEnv::new();
+    let owner = env.always_script();
+    let owner_hash = script_hash_bytes(&owner);
+
+    let salt = [0x66u8; 16];
+    let unlock = 1_700_000_000u64;
+    let (claim_secret, claim_pubkey) = claim_keypair([8u8; 32]);
+    let claimer_lock = env.always_script();
+    let claimer_hash = script_hash_bytes(&claimer_lock);
+
+    let pd = PdBuilder {
+        version: 1,
+        packet_type: 2,
+        slots_total: 2,
+        slots_claimed: 0,
+        expiry: unlock + 86_400,
+        unlock_time: unlock,
+        initial_capacity: 20_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey,
+        salt,
+        ..Default::default()
+    }
+    .build();
+
+    let pckt = env.pckt_script(salt);
+    let previous_output = env.ctx.create_cell(
+        CellOutput::new_builder()
+            .capacity(60_000_000_000u64.pack())
+            .lock(pckt.clone())
+            .build(),
+        pd.as_bytes(),
+    );
+    let packet_input = CellInput::new_builder()
+        .previous_output(previous_output.clone())
+        .since((SINCE_FLAG_ABS_TS | (unlock - 1)).pack())
+        .build();
+
+    let sig = sign_claim(previous_output.as_slice(), claimer_hash, &claim_secret);
+    let witness = claim_witness_bytes(sig, claimer_hash);
+    let tx = TransactionBuilder::default()
+        .input(packet_input)
+        .witness(witness.pack())
+        .build();
+    let tx = env.ctx.complete_tx(tx);
+    let err = env.ctx.verify_tx(&tx, MAX_CYCLES).unwrap_err();
+    let msg = format!("{err:?}");
+    assert!(msg.contains("error code 53"), "expected TooEarly (53), got: {msg}");
+}
+
+#[test]
+fn timed_claim_after_unlock_passes() {
+    let mut env = TestEnv::new();
+    let owner = env.always_script();
+    let owner_hash = script_hash_bytes(&owner);
+
+    let salt = [0x77u8; 16];
+    let unlock = 1_700_000_000u64;
+    let (claim_secret, claim_pubkey) = claim_keypair([9u8; 32]);
+    let claimer_lock = env.always_script();
+    let claimer_hash = script_hash_bytes(&claimer_lock);
+
+    let input_capacity = 60_000_000_000u64;
+    let payout = 10_000_000_000u64;
+    let pd = PdBuilder {
+        version: 1,
+        packet_type: 2,
+        slots_total: 2,
+        slots_claimed: 0,
+        expiry: unlock + 86_400,
+        unlock_time: unlock,
+        initial_capacity: 20_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey,
+        salt,
+        ..Default::default()
+    }
+    .build();
+
+    let pckt = env.pckt_script(salt);
+    let previous_output = env.ctx.create_cell(
+        CellOutput::new_builder()
+            .capacity(input_capacity.pack())
+            .lock(pckt.clone())
+            .build(),
+        pd.as_bytes(),
+    );
+    let packet_input = CellInput::new_builder()
+        .previous_output(previous_output.clone())
+        .since((SINCE_FLAG_ABS_TS | unlock).pack())
+        .build();
+
+    let mut next_claims = Vec::new();
+    next_claims.push(claimer_hash);
+    let next_pd = PdBuilder {
+        version: 1,
+        packet_type: 2,
+        slots_total: 2,
+        slots_claimed: 1,
+        expiry: unlock + 86_400,
+        unlock_time: unlock,
+        initial_capacity: 20_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey,
+        salt,
+        claimed_locks: next_claims,
+        ..Default::default()
+    }
+    .build();
+
+    let sig = sign_claim(previous_output.as_slice(), claimer_hash, &claim_secret);
+    let witness = claim_witness_bytes(sig, claimer_hash);
+    let tx = TransactionBuilder::default()
+        .input(packet_input)
+        .output(
+            CellOutput::new_builder()
+                .capacity(payout.pack())
+                .lock(claimer_lock)
+                .build(),
+        )
+        .output_data(Bytes::new().pack())
+        .output(
+            CellOutput::new_builder()
+                .capacity((input_capacity - payout).pack())
+                .lock(pckt)
+                .build(),
+        )
+        .output_data(Bytes::copy_from_slice(next_pd.as_slice()).pack())
+        .witness(witness.pack())
+        .build();
+    assert_eq!(tx.outputs().len(), 2);
+    assert_eq!(tx.outputs_data().len(), 2);
+    let tx = env.ctx.complete_tx(tx);
+    env.ctx.verify_tx(&tx, MAX_CYCLES).expect("timed claim passes");
+}
+
+#[test]
+fn rejects_double_claim_from_same_wallet() {
+    let mut env = TestEnv::new();
+    let owner = env.always_script();
+    let owner_hash = script_hash_bytes(&owner);
+
+    let salt = [0x88u8; 16];
+    let (claim_secret, claim_pubkey) = claim_keypair([10u8; 32]);
+    let claimer_lock = env.always_script();
+    let claimer_hash = script_hash_bytes(&claimer_lock);
+
+    let mut prior_claims = Vec::new();
+    prior_claims.push(claimer_hash);
+    let pd = PdBuilder {
+        version: 1,
+        packet_type: 0,
+        slots_total: 5,
+        slots_claimed: 1,
+        expiry: 9_999_999_999,
+        unlock_time: 0,
+        initial_capacity: 50_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey,
+        salt,
+        claimed_locks: prior_claims,
+        ..Default::default()
+    }
+    .build();
+
+    let pckt = env.pckt_script(salt);
+    let previous_output = env.ctx.create_cell(
+        CellOutput::new_builder()
+            .capacity(90_000_000_000u64.pack())
+            .lock(pckt)
+            .build(),
+        pd.as_bytes(),
+    );
+    let packet_input = CellInput::new_builder()
+        .previous_output(previous_output.clone())
+        .since(0u64.pack())
+        .build();
+
+    let sig = sign_claim(previous_output.as_slice(), claimer_hash, &claim_secret);
+    let witness = claim_witness_bytes(sig, claimer_hash);
+    let tx = TransactionBuilder::default()
+        .input(packet_input)
+        .witness(witness.pack())
+        .build();
+    let tx = env.ctx.complete_tx(tx);
+    let err = env.ctx.verify_tx(&tx, MAX_CYCLES).unwrap_err();
+    let msg = format!("{err:?}");
+    assert!(
+        msg.contains("error code 55"),
+        "expected AlreadyClaimed (55), got: {msg}"
     );
 }

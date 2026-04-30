@@ -197,15 +197,7 @@ export function App() {
         />
       )}
       {route === 'claim' && <Claim onOpen={() => go('app')} outPoint={selectedOutPoint} />}
-      {route === 'inbox' && (
-        <Inbox
-          packets={packets}
-          onOpen={outPoint => {
-            setSelectedOutPoint(outPoint);
-            go('claim');
-          }}
-        />
-      )}
+      {route === 'inbox' && <Inbox packets={packets} />}
       {route === 'activity' && <Activity packets={packets} />}
       {route === 'me' && <Profile packets={packets} priceUsd={priceUsd} />}
     </AppShell>

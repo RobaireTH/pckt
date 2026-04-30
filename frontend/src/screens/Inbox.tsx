@@ -19,9 +19,9 @@ type InboxItem = {
 
 type Filter = 'all' | 'open' | 'past';
 
-type Props = { packets: PacketSummary[]; onOpen: (outPoint: string) => void };
+type Props = { packets: PacketSummary[] };
 
-export function Inbox({ packets, onOpen }: Props) {
+export function Inbox({ packets }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
   const now = Math.floor(Date.now() / 1000);
   const items: InboxItem[] = packets.map(p => {
@@ -90,11 +90,7 @@ export function Inbox({ packets, onOpen }: Props) {
       {openItems.length > 0 && (
         <Section title="Open">
           {openItems.map(item => (
-            <InboxRow
-              key={item.id}
-              item={item}
-              onClick={item.status === 'open' ? () => onOpen(item.id) : undefined}
-            />
+            <InboxRow key={item.id} item={item} />
           ))}
         </Section>
       )}

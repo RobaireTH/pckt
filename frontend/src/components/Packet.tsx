@@ -49,7 +49,7 @@ export function Packet({
   height = 400,
   amount = '888',
   unit = 'CKB',
-  from = 'shen.bit',
+  from = 'your wallet',
   message = 'Happy Lunar New Year',
   variant = 'crimson',
   status = 'sealed',
@@ -247,6 +247,12 @@ export function Packet({
           color: v.dim,
           fontStyle: 'italic',
           lineHeight: 1.3,
+          overflow: 'hidden',
+          display: '-webkit-box',
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: 'vertical',
+          maxHeight: '3.9em',
+          wordBreak: 'break-word',
         }}
       >
         {message ? `“${message}”` : ''}
