@@ -7,6 +7,7 @@ import {
   type ScriptLike,
 } from '@ckb-ccc/connector-react';
 import type { PacketSummary } from './api';
+import { EXPLORER_URL } from './config';
 import {
   CELL_OVERHEAD_BYTES,
   MIN_SLOT_SHANNONS,
@@ -94,6 +95,10 @@ export function packetSealedAtMs(packet: { sealed_at?: number; expiry: number; u
 export function ownerLabel(ownerLockHash?: string | null, fallback = 'unknown') {
   if (!ownerLockHash) return fallback;
   return `${ownerLockHash.slice(0, 6)}…${ownerLockHash.slice(-4)}`;
+}
+
+export function explorerTxUrl(txHash: string) {
+  return `${EXPLORER_URL}/transaction/${txHash}`;
 }
 
 export function recipientCellCapacity(lock: ScriptLike): bigint {

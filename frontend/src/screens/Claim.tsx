@@ -4,6 +4,7 @@ import { Packet } from '../components/Packet';
 import { fetchPacket, fetchPacketByPubkey, type PacketSummary } from '../api';
 import { useWallet } from '../hooks/useWallet';
 import {
+  explorerTxUrl,
   MIN_CLAIM_CELL_SHANNONS,
   ownerLabel,
   packetTypeInfo,
@@ -36,6 +37,7 @@ export function Claim({ onOpen, outPoint }: Props) {
   const [loading, setLoading] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [payout, setPayout] = useState<bigint | null>(null);
+  const [claimTxHash, setClaimTxHash] = useState<string | null>(null);
   const { signer, wallet, lockScript, openConnect } = useWallet();
 
   const h = window.location.hash.replace(/^#\/?/, '');
@@ -125,6 +127,7 @@ export function Claim({ onOpen, outPoint }: Props) {
         claimPrivateKey: claimSk,
       });
       setPayout(result.payout);
+      setClaimTxHash(result.txHash);
       setOpened(true);
     } catch (e) {
       setError(claimErrorMessage(String(e)));
@@ -226,6 +229,22 @@ export function Claim({ onOpen, outPoint }: Props) {
             >
               Settled to your wallet.
             </div>
+            {claimTxHash && (
+              <a
+                href={explorerTxUrl(claimTxHash)}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'inline-block',
+                  marginBottom: 14,
+                  fontSize: 12,
+                  color: 'var(--crimson-600)',
+                  textDecoration: 'none',
+                }}
+              >
+                View claim tx on explorer →
+              </a>
+            )}
             <Button
               variant="primary"
               size="lg"

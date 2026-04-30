@@ -1,5 +1,7 @@
 export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://127.0.0.1:8181';
 export const CKB_RPC_URL = import.meta.env.VITE_CKB_RPC_URL ?? 'https://testnet.ckb.dev/rpc';
+export const EXPLORER_URL =
+  import.meta.env.VITE_EXPLORER_URL ?? 'https://pudge.explorer.nervos.org';
 export const NETWORK = (import.meta.env.VITE_NETWORK ?? 'testnet') as
   | 'devnet'
   | 'testnet'

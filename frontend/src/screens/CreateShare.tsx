@@ -3,6 +3,7 @@ import { Button } from '../components/ui/Button';
 import { Icon } from '../components/ui/Icon';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
+import { explorerTxUrl } from '../packets';
 import type { Draft } from './CreateAmount';
 
 type Props = {
@@ -20,6 +21,7 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
   const [fullLink] = useState(claimLink);
   const [displayLink] = useState(claimLink.replace(/^https?:\/\//, ''));
   const [copied, setCopied] = useState(false);
+  const sealExplorerUrl = explorerTxUrl(txHash);
 
   const copy = () => {
     navigator.clipboard?.writeText(fullLink).then(
@@ -147,6 +149,20 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
         <div style={{ width: '100%', marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-quiet)' }}>
           Seal tx: {txHash.slice(0, 14)}…{txHash.slice(-8)}
         </div>
+        <a
+          href={sealExplorerUrl}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            width: '100%',
+            marginTop: 6,
+            fontSize: 12,
+            color: 'var(--crimson-600)',
+            textDecoration: 'none',
+          }}
+        >
+          View seal tx on explorer →
+        </a>
         {publicShortLink && (
           <div style={{ width: '100%', marginTop: 4, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-quiet)' }}>
             Public short link: {publicShortLink.replace(/^https?:\/\//, '')}
