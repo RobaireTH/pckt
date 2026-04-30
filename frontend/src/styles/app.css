@@ -4,6 +4,9 @@
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
   background: var(--bg);
   background-image:
     radial-gradient(rgba(90,70,21,.04) 1px, transparent 1.2px),
@@ -20,6 +23,9 @@
 .pckt-shell-main {
   flex: 1;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
   padding-bottom: calc(84px + env(safe-area-inset-bottom));
 }
 
@@ -120,6 +126,8 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
+  width: 100%;
+  min-width: 0;
 }
 
 @media (min-width: 900px) {
@@ -135,12 +143,24 @@
 .pckt-home-actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
   padding: 16px 20px 0;
+  width: 100%;
+}
+
+.pckt-home-actions > * {
+  flex: 1 1 180px;
+  min-width: 0;
 }
 
 @media (min-width: 900px) {
   .pckt-home-actions {
     padding: 0;
+    flex-wrap: nowrap;
+    width: auto;
+  }
+  .pckt-home-actions > * {
+    flex: 0 0 auto;
   }
 }
 
@@ -149,6 +169,12 @@
   grid-template-columns: 1fr;
   gap: 0;
   padding-top: 24px;
+  width: 100%;
+  min-width: 0;
+}
+
+.pckt-home-grid > section {
+  min-width: 0;
 }
 
 @media (min-width: 900px) {
@@ -167,7 +193,10 @@
   scroll-snap-type: x mandatory;
   padding: 8px 20px 8px;
   overscroll-behavior-x: contain;
+  touch-action: pan-x pinch-zoom;
   scrollbar-width: none;
+  width: 100%;
+  max-width: 100%;
 }
 
 .pckt-active-scroll::-webkit-scrollbar {
@@ -178,6 +207,7 @@
   overflow: visible;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  padding-right: 20px;
 }
 
 .pckt-active-scroll[data-layout='grid'] > * {
@@ -287,6 +317,7 @@
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
+  min-width: 0;
 }
 
 @media (min-width: 900px) {
