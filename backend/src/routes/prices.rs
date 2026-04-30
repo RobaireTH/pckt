@@ -36,8 +36,8 @@ pub async fn ckb(State(state): State<AppState>) -> ApiResult<Json<Price>> {
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| ApiError::Upstream(e.to_string()))?;
 
-    let usd = extract_usd(&json)
-        .ok_or_else(|| ApiError::Upstream(price_error_message(&json, &body)))?;
+    let usd =
+        extract_usd(&json).ok_or_else(|| ApiError::Upstream(price_error_message(&json, &body)))?;
 
     let price = Price {
         usd,
@@ -103,7 +103,11 @@ fn price_error_message(json: &serde_json::Value, body: &str) -> String {
         .and_then(|v| v.get("error_message"))
         .and_then(|v| v.as_str())
         .map(str::to_string)
-        .or_else(|| json.get("error").and_then(|v| v.as_str()).map(str::to_string))
+        .or_else(|| {
+            json.get("error")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        })
         .unwrap_or_else(|| {
             let snippet: String = body.chars().take(200).collect();
             format!("missing usd field: {snippet}")

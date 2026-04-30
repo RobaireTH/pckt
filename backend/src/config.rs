@@ -87,12 +87,9 @@ fn parse_u32_maybe_hex(value: &str) -> Result<u32> {
         .strip_prefix("0x")
         .or_else(|| value.strip_prefix("0X"))
     {
-        return u32::from_str_radix(hex, 16)
-            .with_context(|| format!("parse hex u32: {value}"));
+        return u32::from_str_radix(hex, 16).with_context(|| format!("parse hex u32: {value}"));
     }
-    value
-        .parse()
-        .with_context(|| format!("parse u32: {value}"))
+    value.parse().with_context(|| format!("parse u32: {value}"))
 }
 
 #[cfg(test)]
