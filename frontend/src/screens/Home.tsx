@@ -37,7 +37,11 @@ export function Home({ onSend, onClaim, onOpenActivity, sentPackets, claimedPack
   const { wallet, openConnect, balance } = useWallet();
   const displayName = wallet?.shortAddress ?? 'Guest';
   const initials = wallet?.initials ?? '??';
-  const active: ActivePacket[] = sentPackets.slice(0, 6).map(p => {
+  const now = Math.floor(Date.now() / 1000);
+  const active: ActivePacket[] = sentPackets
+    .filter(p => p.slots_claimed < p.slots_total && p.expiry > now)
+    .slice(0, 6)
+    .map(p => {
     const info = packetTypeInfo(p.packet_type);
     return {
       amount: String(Math.floor(Number(p.current_capacity) / 100000000)),
@@ -47,7 +51,7 @@ export function Home({ onSend, onClaim, onOpenActivity, sentPackets, claimedPack
       from: wallet?.shortAddress ?? ownerLabel(p.owner_lock_hash, 'sender'),
       message: p.message_body || '',
     };
-  });
+    });
   const walletBalanceCkb = balance ? toCkb(balance) : null;
   const lockedCkb = sentPackets.reduce(
     (sum, p) => sum + Math.floor(Number(p.current_capacity) / 100000000),

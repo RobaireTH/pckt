@@ -25,6 +25,21 @@ type SummaryRow = (
     Vec<u8>,
     Option<String>,
 );
+type ListRow = (
+    String,
+    i64,
+    i64,
+    i64,
+    String,
+    String,
+    i64,
+    i64,
+    String,
+    String,
+    Vec<u8>,
+    Option<String>,
+    i64,
+);
 type ClaimedRow = (
     String,
     i64,
@@ -121,16 +136,37 @@ pub async fn list(
     Query(q): Query<ListQuery>,
 ) -> ApiResult<Json<Vec<PacketSummary>>> {
     let owner = q.owner.unwrap_or_default();
-    let sql = format!(
-        "{SELECT_SUMMARY} WHERE (?1 = '' OR owner_lock_hash = ?1) \
-         ORDER BY sealed_at DESC LIMIT ?2"
-    );
-    let rows: Vec<SummaryRow> = sqlx::query_as(&sql)
+    let sql = r#"
+        WITH latest AS (
+            SELECT claim_pubkey_hash, MAX(last_seen_block) AS max_block
+            FROM packets
+            WHERE (?1 = '' OR owner_lock_hash = ?1)
+            GROUP BY claim_pubkey_hash
+        )
+        SELECT p.out_point, p.packet_type, p.slots_total, p.slots_claimed,
+               p.initial_capacity, p.current_capacity, p.expiry, p.unlock_time,
+               p.owner_lock_hash, p.claim_pubkey_hash, p.salt, p.message_body,
+               p.last_seen_block
+        FROM packets p
+        JOIN latest l
+          ON p.claim_pubkey_hash = l.claim_pubkey_hash
+         AND p.last_seen_block = l.max_block
+        WHERE (?1 = '' OR p.owner_lock_hash = ?1)
+        ORDER BY p.sealed_at DESC
+        LIMIT ?2
+    "#;
+    let rows: Vec<ListRow> = sqlx::query_as(sql)
         .bind(&owner)
         .bind(LIST_LIMIT)
         .fetch_all(&state.db)
         .await?;
-    Ok(Json(rows.into_iter().map(row_to_summary).collect()))
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| {
+                row_to_summary((r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10, r.11))
+            })
+            .collect(),
+    ))
 }
 
 pub async fn get_one(

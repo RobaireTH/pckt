@@ -97,6 +97,30 @@ pub async fn snapshot(pool: &SqlitePool, out_point: &str) -> Result<Option<Packe
     ))
 }
 
+pub async fn mark_terminal(
+    pool: &SqlitePool,
+    out_point: &str,
+    slots_claimed: u8,
+    current_capacity: u64,
+    block_number: u64,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE packets
+         SET slots_claimed = ?2,
+             current_capacity = ?3,
+             last_seen_block = ?4
+         WHERE out_point = ?1",
+    )
+    .bind(out_point)
+    .bind(slots_claimed as i64)
+    .bind(current_capacity.to_string())
+    .bind(block_number as i64)
+    .execute(pool)
+    .await
+    .context("mark packet terminal")?;
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn record_event(
     pool: &SqlitePool,

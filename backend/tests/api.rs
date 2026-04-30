@@ -166,6 +166,44 @@ async fn claimed_packets_list_filters_by_claimer() {
 }
 
 #[tokio::test]
+async fn packets_list_collapses_successor_versions() {
+    let state = build_state().await;
+
+    sqlx::query(
+        r#"
+        INSERT INTO packets (
+            out_point, packet_type, slots_total, slots_claimed,
+            initial_capacity, current_capacity, expiry, unlock_time,
+            owner_lock_hash, claim_pubkey_hash, salt, message_hash,
+            message_body, sealed_at, last_seen_block
+        ) VALUES
+            ('0xolder:0', 0, 10, 0, '15000000000000', '15058000000000', 1000, 0, '0xowner', '0xpub', x'01', x'01', 'gm', 100, 10),
+            ('0xnewer:0', 0, 10, 1, '15000000000000', '13558000000000', 1000, 0, '0xowner', '0xpub', x'01', x'01', 'gm', 100, 11)
+        "#
+    )
+    .execute(&state.db)
+    .await
+    .unwrap();
+
+    let app = routes::router(&state).with_state(state);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/packets?owner=0xowner")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_string(resp).await;
+    assert!(body.contains("\"out_point\":\"0xnewer:0\""), "body = {body}");
+    assert!(body.contains("\"slots_claimed\":1"), "body = {body}");
+    assert!(!body.contains("\"out_point\":\"0xolder:0\""), "body = {body}");
+}
+
+#[tokio::test]
 async fn missing_packet_404() {
     let app = build_app().await;
     let resp = app

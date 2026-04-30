@@ -527,6 +527,19 @@ impl Indexer {
     ) -> anyhow::Result<()> {
         let event_type = if is_reclaim { "reclaim" } else { "claim" };
         let amount = pred.snapshot.current_capacity.to_string();
+        let final_slots_claimed = if is_reclaim {
+            pred.snapshot.slots_claimed
+        } else {
+            pred.snapshot.slots_total
+        };
+        db::packets::mark_terminal(
+            &self.state.db,
+            &pred.out_point,
+            final_slots_claimed,
+            0,
+            number,
+        )
+        .await?;
         db::packets::record_event(
             &self.state.db,
             &pred.out_point,
