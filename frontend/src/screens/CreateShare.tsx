@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Icon } from '../components/ui/Icon';
 import { Packet } from '../components/Packet';
+import { useWallet } from '../hooks/useWallet';
 import type { Draft } from './CreateAmount';
 
 type Props = {
@@ -15,11 +16,13 @@ type Props = {
 
 export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLink, txHash }: Props) {
   const { amount, message, slots } = draft;
-  const [link] = useState(claimLink.replace(/^https?:\/\//, ''));
+  const { wallet } = useWallet();
+  const [fullLink] = useState(claimLink);
+  const [displayLink] = useState(claimLink.replace(/^https?:\/\//, ''));
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
-    navigator.clipboard?.writeText(link).then(
+    navigator.clipboard?.writeText(fullLink).then(
       () => {
         setCopied(true);
         setTimeout(() => setCopied(false), 1400);
@@ -31,10 +34,8 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
   const share = async () => {
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'A pckt for you', text: message, url: `https://${link}` });
-      } catch {
-        /* user cancelled */
-      }
+        await navigator.share({ title: 'A pckt for you', text: message, url: fullLink });
+      } catch {}
     } else {
       copy();
     }
@@ -82,7 +83,7 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
           width={240}
           height={340}
           amount={amount || '0'}
-          from="shen.bit"
+          from={wallet?.shortAddress ?? 'your wallet'}
           message={message}
           variant="foil"
         />
@@ -110,7 +111,7 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
               wordBreak: 'break-all',
             }}
           >
-            {link}
+            {displayLink}
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, width: '100%' }}>
@@ -137,20 +138,18 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
         )}
       </div>
 
-      <div className="pckt-share-qr">
-        <QRBox value={link} size={180} />
-        <div
-          style={{
-            fontSize: 12,
-            color: 'var(--fg-muted)',
-            fontFamily: 'var(--font-mono)',
-            letterSpacing: '.04em',
-            textAlign: 'center',
-            maxWidth: 220,
-          }}
-        >
-          Or scan to claim — works in any wallet that reads pckt links.
-        </div>
+      <div
+        className="pckt-share-qr"
+        style={{
+          maxWidth: 320,
+          textAlign: 'center',
+          color: 'var(--fg-muted)',
+          fontSize: 12,
+          lineHeight: 1.5,
+        }}
+      >
+        QR sharing is disabled in this build until a real scannable code is wired. Use the secure
+        link above for testnet claims.
       </div>
 
       <div className="pckt-share-footer">
@@ -162,75 +161,5 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
         </Button>
       </div>
     </div>
-  );
-}
-
-function QRBox({ value, size = 180 }: { value: string; size?: number }) {
-  const N = 23;
-  const cell = size / N;
-  let hash = 2166136261;
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  const rnd = (k: number) => {
-    let x = Math.imul(hash ^ (k * 2654435761), 2246822507);
-    x ^= x >>> 13;
-    return (x & 1) === 1;
-  };
-  const inFinder = (i: number, j: number) => {
-    const z = (a: number, b: number) => i >= a && i < a + 7 && j >= b && j < b + 7;
-    return z(0, 0) || z(0, N - 7) || z(N - 7, 0);
-  };
-  const cells: JSX.Element[] = [];
-  for (let i = 0; i < N; i++) {
-    for (let j = 0; j < N; j++) {
-      if (inFinder(i, j)) continue;
-      if (rnd(i * N + j + 1)) {
-        cells.push(
-          <rect
-            key={`${i}-${j}`}
-            x={j * cell}
-            y={i * cell}
-            width={cell}
-            height={cell}
-            fill="currentColor"
-          />,
-        );
-      }
-    }
-  }
-  const finder = (i: number, j: number, key: string) => (
-    <g key={key}>
-      <rect x={j * cell} y={i * cell} width={cell * 7} height={cell * 7} fill="currentColor" />
-      <rect
-        x={(j + 1) * cell}
-        y={(i + 1) * cell}
-        width={cell * 5}
-        height={cell * 5}
-        fill="var(--bg-elev)"
-      />
-      <rect
-        x={(j + 2) * cell}
-        y={(i + 2) * cell}
-        width={cell * 3}
-        height={cell * 3}
-        fill="currentColor"
-      />
-    </g>
-  );
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      style={{ color: 'var(--fg)', borderRadius: 12 }}
-    >
-      <rect width={size} height={size} fill="var(--bg-elev)" />
-      {cells}
-      {finder(0, 0, 'tl')}
-      {finder(0, N - 7, 'tr')}
-      {finder(N - 7, 0, 'bl')}
-    </svg>
   );
 }

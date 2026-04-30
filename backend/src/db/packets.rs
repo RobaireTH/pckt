@@ -14,6 +14,7 @@ pub struct PacketRow<'a> {
 
 pub async fn upsert(pool: &SqlitePool, row: PacketRow<'_>) -> Result<()> {
     let claim_pubkey_hash = hex_str(&blake160(&row.state.claim_pubkey));
+    let message_body = (!row.state.message.is_empty()).then(|| decode_message(&row.state.message));
     sqlx::query(
         "INSERT INTO packets (\
             out_point, packet_type, slots_total, slots_claimed, \
@@ -38,13 +39,20 @@ pub async fn upsert(pool: &SqlitePool, row: PacketRow<'_>) -> Result<()> {
     .bind(claim_pubkey_hash)
     .bind(row.state.salt.clone())
     .bind(blake160(&row.state.message).to_vec())
-    .bind(row.state.message.clone())
+    .bind(message_body)
     .bind(row.sealed_at as i64)
     .bind(row.block_number as i64)
     .execute(pool)
     .await
     .context("upsert packet")?;
     Ok(())
+}
+
+fn decode_message(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => String::from_utf8_lossy(bytes).into_owned(),
+    }
 }
 
 pub async fn lookup(pool: &SqlitePool, out_point: &str) -> Result<Option<(String, String)>> {

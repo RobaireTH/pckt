@@ -347,14 +347,17 @@ impl Indexer {
             .map(Vec::as_slice)
             .unwrap_or(&[]);
         let want_code_hash = self.state.config.packet_lock.code_hash.as_str();
+        let want_hash_type = self.state.config.packet_lock.hash_type.as_str();
 
         let mut out = Vec::new();
         for (idx, output) in outputs.iter().enumerate() {
-            let lock_code = output
-                .pointer("/lock/code_hash")
-                .and_then(Value::as_str)
-                .unwrap_or("");
-            if lock_code != want_code_hash {
+            let lock = match output.get("lock") {
+                Some(lock) => lock,
+                None => continue,
+            };
+            let lock_code = lock.get("code_hash").and_then(Value::as_str).unwrap_or("");
+            let lock_hash_type = lock.get("hash_type").and_then(Value::as_str).unwrap_or("");
+            if lock_code != want_code_hash || lock_hash_type != want_hash_type {
                 continue;
             }
             let raw = match outputs_data.get(idx).and_then(Value::as_str) {
@@ -390,12 +393,14 @@ impl Indexer {
             .map(Vec::as_slice)
             .unwrap_or(&[]);
         let want_packet = self.state.config.packet_lock.code_hash.as_str();
+        let want_packet_hash_type = self.state.config.packet_lock.hash_type.as_str();
         outputs
             .iter()
             .filter_map(|o| {
                 let lock = o.get("lock")?;
                 let code_hex = lock.get("code_hash").and_then(Value::as_str)?;
-                if code_hex == want_packet {
+                let hash_type_text = lock.get("hash_type").and_then(Value::as_str).unwrap_or("");
+                if code_hex == want_packet && hash_type_text == want_packet_hash_type {
                     return None;
                 }
                 let code = decode_hex(code_hex)?;

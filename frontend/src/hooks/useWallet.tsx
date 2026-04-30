@@ -19,6 +19,8 @@ export function useWallet() {
   const [address, setAddress] = useState('');
   const [lockHash, setLockHash] = useState<string | null>(null);
   const [lockScript, setLockScript] = useState<Script | null>(null);
+  const [balance, setBalance] = useState<bigint | null>(null);
+  const signer: Signer | null = signerInfo?.signer ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -26,6 +28,7 @@ export function useWallet() {
       setAddress('');
       setLockHash(null);
       setLockScript(null);
+      setBalance(null);
       return;
     }
     const signer = signerInfo.signer;
@@ -33,9 +36,7 @@ export function useWallet() {
       addr => {
         if (!cancelled) setAddress(addr);
       },
-      () => {
-        /* ignore */
-      },
+      () => {},
     );
     signer.getRecommendedAddressObj().then(
       addrObj => {
@@ -44,16 +45,38 @@ export function useWallet() {
         setLockScript(script);
         setLockHash(script.hash());
       },
-      () => {
-        /* ignore */
-      },
+      () => {},
     );
     return () => {
       cancelled = true;
     };
   }, [signerInfo]);
 
-  const signer: Signer | null = signerInfo?.signer ?? null;
+  useEffect(() => {
+    let cancelled = false;
+    if (!signer) {
+      setBalance(null);
+      return;
+    }
+
+    const refresh = () => {
+      signer.getBalance().then(
+        next => {
+          if (!cancelled) setBalance(next);
+        },
+        () => {
+          if (!cancelled) setBalance(null);
+        },
+      );
+    };
+
+    refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [signer]);
 
   const displayed: DisplayWallet | null =
     wallet && signerInfo
@@ -72,6 +95,7 @@ export function useWallet() {
     client: client as Client,
     lockHash,
     lockScript,
+    balance,
     isConnectOpen: isOpen,
     openConnect: open,
     closeConnect: close,

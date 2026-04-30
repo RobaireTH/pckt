@@ -46,8 +46,7 @@ impl Config {
                 code_hash: env_var("PACKET_LOCK_CODE_HASH")?,
                 hash_type: env_var("PACKET_LOCK_HASH_TYPE")?,
                 out_point_tx: env_var("PACKET_LOCK_OUT_POINT_TX")?,
-                out_point_index: env_or("PACKET_LOCK_OUT_POINT_INDEX", "0")
-                    .parse()
+                out_point_index: parse_u32_maybe_hex(&env_or("PACKET_LOCK_OUT_POINT_INDEX", "0"))
                     .context("PACKET_LOCK_OUT_POINT_INDEX")?,
             },
             allowed_origins: env_or("ALLOWED_ORIGINS", "*")
@@ -80,5 +79,31 @@ fn parse_network(value: &str) -> Result<Network> {
         "testnet" => Ok(Network::Testnet),
         "mainnet" => Ok(Network::Mainnet),
         other => anyhow::bail!("unknown CKB_NETWORK: {other}"),
+    }
+}
+
+fn parse_u32_maybe_hex(value: &str) -> Result<u32> {
+    if let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        return u32::from_str_radix(hex, 16)
+            .with_context(|| format!("parse hex u32: {value}"));
+    }
+    value
+        .parse()
+        .with_context(|| format!("parse u32: {value}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_u32_maybe_hex;
+
+    #[test]
+    fn parses_decimal_or_hex_out_point_index() {
+        assert_eq!(parse_u32_maybe_hex("0").unwrap(), 0);
+        assert_eq!(parse_u32_maybe_hex("17").unwrap(), 17);
+        assert_eq!(parse_u32_maybe_hex("0x11").unwrap(), 17);
+        assert_eq!(parse_u32_maybe_hex("0X11").unwrap(), 17);
     }
 }

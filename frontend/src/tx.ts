@@ -21,6 +21,7 @@ import {
   maxFloor,
   type PacketData,
 } from './molecule';
+import { predictClaimPayout, toBigInt } from './packets';
 import type { Draft } from './screens/CreateAmount';
 
 const SHANNONS = 100_000_000n;
@@ -121,20 +122,33 @@ export async function buildAndRelayClaimTx(params: {
   const tipHash = tip.hash;
   const claimer = await signer.getRecommendedAddressObj();
   const claimerLockHash = claimer.script.hash();
-  const inputCap = BigInt(packetCell.cellOutput.capacity.toString());
+  const inputCap = toBigInt(packetCell.cellOutput.capacity.toString());
   const total = Number(pd.slots_total);
   const claimed = Number(pd.slots_claimed);
   if (claimed >= total) throw new Error('Packet already fully claimed');
   const remaining = total - claimed;
-  let payout = inputCap / BigInt(total);
-  if (Number(pd.packet_type) === 1) {
-    payout = inputCap / BigInt(remaining);
-  }
+  const payout = predictClaimPayout({
+    out_point: outPoint,
+    packet_type: Number(pd.packet_type),
+    slots_total: total,
+    slots_claimed: claimed,
+    initial_capacity: toBigInt(pd.initial_capacity).toString(),
+    current_capacity: inputCap.toString(),
+    expiry: Number(pd.expiry),
+    unlock_time: Number(pd.unlock_time),
+    owner_lock_hash: String(pd.owner_lock_hash),
+    claim_pubkey_hash: '',
+    salt: String(pd.salt),
+    message_body: new TextDecoder().decode(bytesFrom(pd.message)),
+  });
 
   const tx = Transaction.from({
     inputs: [{
       previousOutput: op,
-      since: Number(pd.packet_type) === 2 ? (0x4000000000000000n | BigInt(Math.floor(Date.now() / 1000))) : 0,
+      since:
+        Number(pd.packet_type) >= 2
+          ? 0x4000000000000000n | BigInt(Math.floor(Date.now() / 1000))
+          : 0,
     }],
     headerDeps: [tipHash],
     outputs: [{ lock: claimer.script, capacity: payout }],

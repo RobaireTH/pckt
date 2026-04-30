@@ -26,17 +26,18 @@ pub async fn ckb(State(state): State<AppState>) -> ApiResult<Json<Price>> {
 
     let resp = reqwest::get(&state.config.price_feed_url)
         .await
+        .map_err(|e| ApiError::Upstream(e.to_string()))?
+        .error_for_status()
         .map_err(|e| ApiError::Upstream(e.to_string()))?;
-    let json: serde_json::Value = resp
-        .json()
+    let body = resp
+        .text()
         .await
         .map_err(|e| ApiError::Upstream(e.to_string()))?;
+    let json: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| ApiError::Upstream(e.to_string()))?;
 
-    let usd = json
-        .get("nervos-network")
-        .and_then(|v| v.get("usd"))
-        .and_then(|v| v.as_f64())
-        .ok_or_else(|| ApiError::Upstream("missing usd field".into()))?;
+    let usd = extract_usd(&json)
+        .ok_or_else(|| ApiError::Upstream(price_error_message(&json, &body)))?;
 
     let price = Price {
         usd,
@@ -69,4 +70,42 @@ fn now_unix() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+fn extract_usd(json: &serde_json::Value) -> Option<f64> {
+    json.get("nervos-network")
+        .and_then(|v| v.get("usd"))
+        .and_then(|v| v.as_f64())
+        .or_else(|| json.get("USD").and_then(|v| v.as_f64()))
+        .or_else(|| json.get("usd").and_then(|v| v.as_f64()))
+        .or_else(|| {
+            json.as_array()
+                .and_then(|items| items.first())
+                .and_then(|v| v.get("current_price"))
+                .and_then(|v| v.as_f64())
+        })
+        .or_else(|| {
+            json.get("quotes")
+                .and_then(|v| v.get("USD"))
+                .and_then(|v| v.get("price"))
+                .and_then(|v| v.as_f64())
+        })
+        .or_else(|| {
+            json.get("market_data")
+                .and_then(|v| v.get("current_price"))
+                .and_then(|v| v.get("usd"))
+                .and_then(|v| v.as_f64())
+        })
+}
+
+fn price_error_message(json: &serde_json::Value, body: &str) -> String {
+    json.get("status")
+        .and_then(|v| v.get("error_message"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .or_else(|| json.get("error").and_then(|v| v.as_str()).map(str::to_string))
+        .unwrap_or_else(|| {
+            let snippet: String = body.chars().take(200).collect();
+            format!("missing usd field: {snippet}")
+        })
 }

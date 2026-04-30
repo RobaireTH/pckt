@@ -4,6 +4,7 @@ import { Icon } from '../components/ui/Icon';
 import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
+import { packetTypeInfo } from '../packets';
 import { buildAndRelaySealTx } from '../tx';
 import type { Draft } from './CreateAmount';
 
@@ -14,12 +15,6 @@ type Props = {
   onClose: () => void;
 };
 
-const TYPE_LABEL: Record<Draft['type'], string> = {
-  fixed: 'Fixed',
-  lucky: 'Lucky split',
-  timed: 'Timed unlock',
-};
-
 export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
   const { wallet, signer, lockHash, openConnect } = useWallet();
   const [submitting, setSubmitting] = useState(false);
@@ -27,10 +22,10 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
   const { type, amount, slots, message, unlock } = draft;
   const numAmount = Number(amount) || 0;
   const avg = slots > 0 ? Math.max(1, Math.round(numAmount / slots)) : 0;
-  const networkFee = 0.12;
+  const typeLabel = packetTypeInfo(type === 'fixed' ? 0 : type === 'lucky' ? 1 : 2).label;
 
   const rows: Array<{ label: string; value: string; mono?: boolean }> = [
-    { label: 'Type', value: TYPE_LABEL[type] },
+    { label: 'Type', value: typeLabel },
     { label: 'Total', value: `${amount} CKB`, mono: true },
     { label: 'Recipients', value: String(slots) },
     {
@@ -55,7 +50,7 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
   }
 
   rows.push(
-    { label: 'Network fee', value: `${networkFee} CKB`, mono: true },
+    { label: 'Network fee', value: 'Calculated by the wallet at signing' },
     { label: 'From', value: wallet ? wallet.shortAddress : 'Not connected', mono: !!wallet },
   );
 
@@ -258,7 +253,7 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
               letterSpacing: '.04em',
             }}
           >
-            {TYPE_LABEL[type]} · {slots} slots · {amount} CKB
+            {typeLabel} · {slots} slots · {amount} CKB
           </div>
           <Button variant="primary" size="lg" full icon={sealIcon} onClick={sealNow} disabled={submitting}>
             {sealLabel}

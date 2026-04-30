@@ -9,3 +9,6 @@ NOTES/
 .devnet/
 PLAN.md
 backend/PLAN.md
+backend/pckt.db
+backend/pckt.db-shm
+backend/pckt.db-wal

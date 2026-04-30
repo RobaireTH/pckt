@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { Chip } from '../components/ui/Chip';
 import type { PacketSummary } from '../api';
+import { packetMoment, packetTypeInfo } from '../packets';
 
 type LedgerRow = {
   direction: 'in' | 'out';
-  kind: 'Lucky' | 'Fixed' | 'Timed' | 'Claim' | 'Refund';
+  kind: string;
   title: string;
   meta: string;
   amount: string;
   at: string;
+  hasClaims: boolean;
   group: 'today' | 'week' | 'earlier';
 };
 
-type Filter = 'all' | 'sent' | 'received';
+type Filter = 'all' | 'sent' | 'claimed';
 
 const groupLabels: Record<LedgerRow['group'], string> = {
   today: 'Today',
@@ -24,31 +26,30 @@ export function Activity({ packets }: { packets: PacketSummary[] }) {
   const [filter, setFilter] = useState<Filter>('all');
   const now = Date.now() / 1000;
   const rows: LedgerRow[] = packets.map(p => {
-    const kind: LedgerRow['kind'] = p.packet_type === 1 ? 'Fixed' : p.packet_type === 2 ? 'Timed' : 'Lucky';
-    const ageDays = (now - p.unlock_time) / 86400;
+    const kind = packetTypeInfo(p.packet_type).shortLabel;
+    const ageDays = (now - packetMoment(p)) / 86400;
     return {
       direction: 'out',
       kind,
-      title: `${kind} packet`,
+      title: packetTypeInfo(p.packet_type).label,
       meta: `${p.slots_claimed}/${p.slots_total} claimed`,
       amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
-      at: new Date(p.unlock_time * 1000).toLocaleDateString(),
+      at: new Date(packetMoment(p) * 1000).toLocaleDateString(),
+      hasClaims: p.slots_claimed > 0,
       group: ageDays < 1 ? 'today' : ageDays < 7 ? 'week' : 'earlier',
     };
   });
 
   const visible = rows.filter(r => {
     if (filter === 'sent') return r.direction === 'out';
-    if (filter === 'received') return r.direction === 'in';
+    if (filter === 'claimed') return r.hasClaims;
     return true;
   });
 
   const totalSent = rows
     .filter(r => r.direction === 'out')
     .reduce((sum, r) => sum + Number(r.amount.replace(/[^\d-]/g, '')), 0);
-  const totalReceived = rows
-    .filter(r => r.direction === 'in')
-    .reduce((sum, r) => sum + Number(r.amount.replace(/[^\d-]/g, '')), 0);
+  const claimedPackets = rows.filter(r => r.hasClaims).length;
 
   const groups: LedgerRow['group'][] = ['today', 'week', 'earlier'];
 
@@ -68,7 +69,7 @@ export function Activity({ packets }: { packets: PacketSummary[] }) {
           Activity
         </h1>
         <p style={{ fontSize: 14, color: 'var(--fg-muted)', margin: '6px 0 0' }}>
-          Everything you've sent, claimed, and received.
+          Live history for the packets you've sealed.
         </p>
       </header>
 
@@ -85,7 +86,7 @@ export function Activity({ packets }: { packets: PacketSummary[] }) {
           }}
         >
           <Summary label="Sent" value={`${Math.abs(totalSent).toLocaleString()} CKB`} />
-          <Summary label="Received" value={`${totalReceived.toLocaleString()} CKB`} tint="ok" />
+          <Summary label="Claimed" value={`${claimedPackets.toLocaleString()} packets`} tint="ok" />
         </div>
       </section>
 
@@ -96,8 +97,8 @@ export function Activity({ packets }: { packets: PacketSummary[] }) {
         <Chip active={filter === 'sent'} onClick={() => setFilter('sent')}>
           Sent
         </Chip>
-        <Chip active={filter === 'received'} onClick={() => setFilter('received')}>
-          Received
+        <Chip active={filter === 'claimed'} onClick={() => setFilter('claimed')}>
+          Claimed
         </Chip>
       </div>
 

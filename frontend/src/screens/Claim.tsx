@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Packet } from '../components/Packet';
 import { fetchPacket, fetchPacketByPubkey, type PacketSummary } from '../api';
 import { useWallet } from '../hooks/useWallet';
+import { packetTypeInfo, predictClaimPayout, toCkb } from '../packets';
 import { buildAndRelayClaimTx } from '../tx';
 
 type Props = { onOpen: () => void; outPoint: string | null };
@@ -13,23 +14,18 @@ export function Claim({ onOpen, outPoint }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [claiming, setClaiming] = useState(false);
+  const [payout, setPayout] = useState<bigint | null>(null);
   const { signer, wallet, openConnect } = useWallet();
 
-  const routeParts = useMemo(() => {
-    const h = window.location.hash.replace(/^#\/?/, '');
-    const pathOnly = h.split('?')[0];
-    return pathOnly.split('/').filter(Boolean);
-  }, []);
-
+  const h = window.location.hash.replace(/^#\/?/, '');
+  const pathOnly = h.split('?')[0];
+  const routeParts = pathOnly.split('/').filter(Boolean);
   const pathPubkey = routeParts[1] || '';
   const pathSk = routeParts[2] || '';
 
-  const queryPubkey = useMemo(() => {
-    const hash = window.location.hash;
-    const idx = hash.indexOf('?');
-    if (idx < 0) return '';
-    return new URLSearchParams(hash.slice(idx + 1)).get('pubkey') || '';
-  }, []);
+  const idx = window.location.hash.indexOf('?');
+  const queryPubkey =
+    idx < 0 ? '' : new URLSearchParams(window.location.hash.slice(idx + 1)).get('pubkey') || '';
   const claimPubkey = pathPubkey || queryPubkey;
   const claimSk = pathSk;
 
@@ -41,10 +37,13 @@ export function Claim({ onOpen, outPoint }: Props) {
       ? fetchPacket(outPoint)
       : claimPubkey
       ? fetchPacketByPubkey(claimPubkey)
-      : Promise.reject(new Error('No claim link selected'));
+      : Promise.reject(new Error('Open a pckt claim link to continue.'));
     req.then(
       p => {
-        if (!cancelled) setPacket(p);
+        if (!cancelled) {
+          setPacket(p);
+          setPayout(predictClaimPayout(p));
+        }
       },
       e => {
         if (!cancelled) setError(String(e));
@@ -63,8 +62,13 @@ export function Claim({ onOpen, outPoint }: Props) {
   const message = packet?.message_body || 'A packet for you';
   const remaining = packet ? Math.max(0, packet.slots_total - packet.slots_claimed) : 0;
   const totalCkb = packet ? Math.floor(Number(packet.current_capacity) / 100000000) : 0;
-  const hintAmount = remaining > 0 ? Math.max(1, Math.floor(totalCkb / remaining)) : 0;
+  const expectedCkb = payout ? toCkb(payout) : 0;
+  const previewAmount =
+    expectedCkb > 0
+      ? expectedCkb.toLocaleString(undefined, { maximumFractionDigits: 4 })
+      : String(totalCkb || '0');
   const targetOutPoint = outPoint || packet?.out_point || null;
+  const typeInfo = packet ? packetTypeInfo(packet.packet_type) : null;
 
   const claimNow = async () => {
     if (!wallet || !signer) {
@@ -82,11 +86,12 @@ export function Claim({ onOpen, outPoint }: Props) {
     setClaiming(true);
     setError(null);
     try {
-      await buildAndRelayClaimTx({
+      const result = await buildAndRelayClaimTx({
         outPoint: targetOutPoint,
         signer,
         claimPrivateKey: claimSk,
       });
+      setPayout(result.payout);
       setOpened(true);
     } catch (e) {
       setError(String(e));
@@ -125,7 +130,7 @@ export function Claim({ onOpen, outPoint }: Props) {
         <Packet
           width={260}
           height={368}
-          amount={opened ? String(hintAmount) : String(totalCkb || '0')}
+          amount={previewAmount}
           from={from}
           message={message}
           status={opened ? 'claimed' : 'sealed'}
@@ -157,7 +162,7 @@ export function Claim({ onOpen, outPoint }: Props) {
                 textAlign: 'center',
               }}
             >
-              {remaining} of {packet?.slots_total ?? 0} slots remain
+              {typeInfo?.shortLabel ?? 'Packet'} · {remaining} of {packet?.slots_total ?? 0} slots remain
             </div>
           </>
         ) : (
@@ -172,7 +177,7 @@ export function Claim({ onOpen, outPoint }: Props) {
                 textAlign: 'center',
               }}
             >
-              +{hintAmount} CKB
+              +{previewAmount} CKB
             </div>
             <div
               style={{

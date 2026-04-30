@@ -23,7 +23,7 @@ type TabDef = {
 
 const tabs: TabDef[] = [
   { id: 'home', icon: 'home', label: 'Home', route: 'app' },
-  { id: 'inbox', icon: 'inbox', label: 'Inbox', route: 'inbox' },
+  { id: 'inbox', icon: 'inbox', label: 'Packets', route: 'inbox' },
   { id: 'create', icon: 'plus', label: 'Send', route: 'create', big: true },
   { id: 'history', icon: 'clock', label: 'Activity', route: 'activity' },
   { id: 'me', icon: 'user', label: 'Me', route: 'me' },
@@ -31,7 +31,7 @@ const tabs: TabDef[] = [
 
 const topnavLinks: Array<{ id: Tab; label: string; route: Route; icon?: IconName }> = [
   { id: 'home', label: 'Home', route: 'app', icon: 'home' },
-  { id: 'inbox', label: 'Inbox', route: 'inbox', icon: 'inbox' },
+  { id: 'inbox', label: 'Packets', route: 'inbox', icon: 'inbox' },
   { id: 'history', label: 'Activity', route: 'activity', icon: 'clock' },
 ];
 

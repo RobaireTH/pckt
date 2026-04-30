@@ -3,6 +3,7 @@ import { Icon } from '../components/ui/Icon';
 import { Chip } from '../components/ui/Chip';
 import { Packet } from '../components/Packet';
 import type { PacketSummary } from '../api';
+import { packetMoment, packetTypeInfo } from '../packets';
 
 type InboxItem = {
   id: string;
@@ -10,7 +11,7 @@ type InboxItem = {
   message: string;
   status: 'open' | 'timed' | 'claimed' | 'expired';
   variant: 'crimson' | 'ink' | 'foil';
-  kind: 'Lucky' | 'Fixed' | 'Timed';
+  kind: string;
   amount?: string;
   meta: string;
   when: string;
@@ -27,20 +28,21 @@ export function Inbox({ packets, onOpen }: Props) {
     const open = p.slots_claimed < p.slots_total && p.unlock_time <= now && p.expiry > now;
     const timed = p.unlock_time > now && p.expiry > now;
     const expired = p.expiry <= now;
-    const status: InboxItem['status'] = open ? 'open' : timed ? 'timed' : expired ? 'expired' : 'claimed';
-    const kind = p.packet_type === 1 ? 'Fixed' : p.packet_type === 2 ? 'Timed' : 'Lucky';
+    const status: InboxItem['status'] =
+      open ? 'open' : timed ? 'timed' : expired ? 'expired' : 'claimed';
+    const info = packetTypeInfo(p.packet_type);
     return {
       id: p.out_point,
       from: `${p.owner_lock_hash.slice(0, 6)}…${p.owner_lock_hash.slice(-4)}`,
       message: p.message_body || 'A packet for you',
       status,
-      variant: status === 'claimed' ? 'foil' : 'crimson',
-      kind,
+      variant: status === 'claimed' ? 'foil' : info.variant,
+      kind: info.shortLabel,
       meta:
         status === 'timed'
           ? `unlocks at ${new Date(p.unlock_time * 1000).toLocaleString()}`
           : `${Math.max(0, p.slots_total - p.slots_claimed)} of ${p.slots_total} slots remain`,
-      when: new Date(p.unlock_time * 1000).toLocaleDateString(),
+      when: new Date(packetMoment(p) * 1000).toLocaleDateString(),
     };
   });
 
@@ -66,10 +68,10 @@ export function Inbox({ packets, onOpen }: Props) {
             margin: 0,
           }}
         >
-          Inbox
+          Packets
         </h1>
         <p style={{ fontSize: 14, color: 'var(--fg-muted)', margin: '6px 0 0' }}>
-          Packets sent to you — sealed, timed, and claimed.
+          Live state for packets you've sealed on testnet.
         </p>
       </header>
 

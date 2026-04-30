@@ -4,6 +4,7 @@ import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
 import type { PacketSummary } from '../api';
+import { packetMoment, packetTypeInfo, toCkb } from '../packets';
 
 type Props = {
   onSend: () => void;
@@ -28,28 +29,34 @@ type LedgerRow = {
 };
 
 export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
-  const { wallet, openConnect } = useWallet();
+  const { wallet, openConnect, balance } = useWallet();
   const displayName = wallet?.shortAddress ?? 'Guest';
   const initials = wallet?.initials ?? '??';
-  const active: ActivePacket[] = packets.slice(0, 6).map(p => ({
-    amount: String(Math.floor(Number(p.current_capacity) / 100000000)),
-    kind: p.packet_type === 1 ? 'Fixed' : p.packet_type === 2 ? 'Timed' : 'Lucky',
-    meta: `${p.slots_claimed} / ${p.slots_total} claimed`,
-    variant: p.packet_type === 1 ? 'ink' : 'crimson',
-  }));
-  const balanceCkb = packets.reduce((sum, p) => sum + Math.floor(Number(p.current_capacity) / 100000000), 0);
-  const usd = priceUsd ? (balanceCkb * priceUsd).toFixed(2) : null;
+  const active: ActivePacket[] = packets.slice(0, 6).map(p => {
+    const info = packetTypeInfo(p.packet_type);
+    return {
+      amount: String(Math.floor(Number(p.current_capacity) / 100000000)),
+      kind: info.shortLabel,
+      meta: `${p.slots_claimed} / ${p.slots_total} claimed`,
+      variant: info.variant,
+    };
+  });
+  const walletBalanceCkb = balance ? toCkb(balance) : null;
+  const lockedCkb = packets.reduce(
+    (sum, p) => sum + Math.floor(Number(p.current_capacity) / 100000000),
+    0,
+  );
+  const usd = walletBalanceCkb !== null && priceUsd ? (walletBalanceCkb * priceUsd).toFixed(2) : null;
   const ledger: LedgerRow[] = packets.slice(0, 8).map(p => ({
     direction: 'out',
-    title: `${p.packet_type === 1 ? 'Fixed' : p.packet_type === 2 ? 'Timed' : 'Lucky'} packet`,
+    title: packetTypeInfo(p.packet_type).label,
     meta: `${p.slots_claimed}/${p.slots_total} claimed`,
     amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
-    at: new Date(p.unlock_time * 1000).toLocaleDateString(),
+    at: new Date(packetMoment(p) * 1000).toLocaleDateString(),
   }));
 
   return (
     <div>
-      {/* Header (mobile-only — desktop has the topnav) */}
       <header
         style={{
           padding: '20px 20px 0',
@@ -81,7 +88,6 @@ export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
         @media (min-width: 900px) { .pckt-home-mobile-header { display: none; } }
       `}</style>
 
-      {/* Hero: balance + actions */}
       <section className="pckt-home-hero">
         <div>
           <div className="t-eyebrow" style={{ color: 'var(--crimson-600)' }}>
@@ -98,7 +104,9 @@ export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
                 lineHeight: 1,
               }}
             >
-              {wallet ? balanceCkb.toLocaleString() : '—'}
+              {wallet && walletBalanceCkb !== null
+                ? walletBalanceCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                : '—'}
             </span>
             <span
               style={{ fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--fg-muted)' }}
@@ -114,7 +122,9 @@ export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
               marginTop: 6,
             }}
           >
-            {wallet ? `≈ ${usd ? `$${usd}` : '...'} USD` : 'Connect a wallet to see your balance'}
+            {wallet
+              ? `${usd ? `≈ $${usd} USD` : 'Price unavailable'} · ${lockedCkb.toLocaleString()} CKB locked in packets`
+              : 'Connect a wallet to see your balance'}
           </div>
         </div>
 
@@ -124,8 +134,8 @@ export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
               <Button variant="primary" size="lg" icon="plus" onClick={onSend}>
                 Send packet
               </Button>
-              <Button variant="ghost" size="lg" icon="link" onClick={onClaim}>
-                Claim a link
+              <Button variant="ghost" size="lg" icon="inbox" onClick={onClaim}>
+                View packets
               </Button>
             </>
           ) : (
@@ -136,7 +146,6 @@ export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
         </div>
       </section>
 
-      {/* Grid: Active + Ledger */}
       <div className="pckt-home-grid">
         <section>
           <div
