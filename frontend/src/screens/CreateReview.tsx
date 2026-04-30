@@ -4,7 +4,7 @@ import { Icon } from '../components/ui/Icon';
 import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
-import { packetTypeInfo } from '../packets';
+import { packetFloor, packetTypeInfo, toCkb } from '../packets';
 import { buildAndRelaySealTx } from '../tx';
 import type { Draft } from './CreateAmount';
 
@@ -16,17 +16,30 @@ type Props = {
 };
 
 export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
-  const { wallet, signer, lockHash, openConnect } = useWallet();
+  const { wallet, signer, lockHash, openConnect, balance } = useWallet();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { type, amount, slots, message, unlock } = draft;
   const numAmount = Number(amount) || 0;
   const avg = slots > 0 ? Math.max(1, Math.round(numAmount / slots)) : 0;
   const typeLabel = packetTypeInfo(type === 'fixed' ? 0 : type === 'lucky' ? 1 : 2).label;
+  const reserveCkb = toCkb(packetFloor(slots, message));
+  const totalNeededCkb = numAmount + reserveCkb;
+  const walletBalanceCkb = balance ? toCkb(balance) : null;
 
   const rows: Array<{ label: string; value: string; mono?: boolean }> = [
     { label: 'Type', value: typeLabel },
     { label: 'Total', value: `${amount} CKB`, mono: true },
+    {
+      label: 'Cell reserve',
+      value: `${reserveCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })} CKB`,
+      mono: true,
+    },
+    {
+      label: 'Needed now',
+      value: `${totalNeededCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })} CKB`,
+      mono: true,
+    },
     { label: 'Recipients', value: String(slots) },
     {
       label: type === 'lucky' ? 'Per slot' : 'Each',
@@ -53,6 +66,13 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
     { label: 'Network fee', value: 'Calculated by the wallet at signing' },
     { label: 'From', value: wallet ? wallet.shortAddress : 'Not connected', mono: !!wallet },
   );
+  if (walletBalanceCkb !== null) {
+    rows.push({
+      label: 'Wallet balance',
+      value: `${walletBalanceCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })} CKB`,
+      mono: true,
+    });
+  }
 
   const sealLabel = submitting ? 'Sealing…' : wallet ? 'Seal & sign' : 'Connect to seal';
   const sealIcon = wallet ? 'seal' : 'wallet';
@@ -201,7 +221,8 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
               </div>
               <div style={{ fontSize: 12, color: 'var(--fg)', lineHeight: 1.5 }}>
                 Funds are locked on-chain until recipients claim, or they're returned to you after
-                expiry. Unclaimed slots don't disappear.
+                expiry. The reserve stays with the packet cell so it can keep living through claim
+                updates.
               </div>
             </div>
           </section>

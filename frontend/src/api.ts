@@ -24,9 +24,26 @@ export type PacketEvent = {
   slot_amount: string | null;
 };
 
+type ApiErrorBody = {
+  error?: string;
+  message?: string;
+};
+
+async function parseError(res: Response): Promise<string> {
+  const text = await res.text();
+  if (!text) return `${res.status} ${res.statusText}`;
+  try {
+    const body = JSON.parse(text) as ApiErrorBody;
+    if (body.message) {
+      return `${res.status} ${body.message}`;
+    }
+  } catch {}
+  return `${res.status} ${text}`;
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BACKEND_URL}${path}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
 
@@ -36,7 +53,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
 
@@ -65,7 +82,7 @@ export function createShortlink(
   target: string,
   ttl?: number,
 ): Promise<{ slug: string; short_url: string }> {
-  return post('/v1/links', { target, ttl });
+  return post('/v1/links', { full_url: target, ttl });
 }
 
 export function fetchCkbPrice(): Promise<{ usd: number }> {

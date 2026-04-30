@@ -2,6 +2,8 @@ import { Button } from '../components/ui/Button';
 import { Chip } from '../components/ui/Chip';
 import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
+import { useWallet } from '../hooks/useWallet';
+import { packetFloor, toCkb } from '../packets';
 import { PacketType } from './CreateType';
 
 const amountPresets = ['88', '188', '888', '1888', '8888'];
@@ -55,8 +57,12 @@ const labels: Record<
 
 export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Props) {
   const { type, amount, slots, message, unlock } = draft;
+  const { balance } = useWallet();
   const numAmount = Number(amount) || 0;
   const avg = slots > 0 ? Math.max(1, Math.round(numAmount / slots)) : 0;
+  const reserveCkb = toCkb(packetFloor(slots, message));
+  const totalNeededCkb = numAmount + reserveCkb;
+  const walletBalanceCkb = balance ? toCkb(balance) : null;
   const L = labels[type];
 
   return (
@@ -158,6 +164,40 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
             >
               ≈ ${(numAmount / 100).toFixed(2)} USD
             </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: 'var(--fg-muted)',
+                marginTop: 8,
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              Needs about {totalNeededCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
+              CKB total now
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--fg-quiet)',
+                marginTop: 6,
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              {reserveCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })} CKB reserve stays
+              in the packet cell for CKB storage
+            </div>
+            {walletBalanceCkb !== null && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: walletBalanceCkb >= totalNeededCkb ? 'var(--fg-quiet)' : 'var(--danger)',
+                  marginTop: 6,
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                Wallet balance: {walletBalanceCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })} CKB
+              </div>
+            )}
             <div
               style={{
                 display: 'flex',

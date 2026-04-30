@@ -29,10 +29,10 @@ pub async fn submit(
         return Err(ApiError::BadRequest("signed_tx must be a tx object".into()));
     }
     let rpc = CkbRpc::new(state.config.ckb_rpc_url.clone());
-    let tx_hash = rpc
-        .send_transaction(body.signed_tx)
-        .await
-        .map_err(|e| ApiError::Upstream(e.to_string()))?;
+    let tx_hash = rpc.send_transaction(body.signed_tx).await.map_err(|e| {
+        tracing::error!(?e, "relay transaction failed");
+        ApiError::Upstream(e.to_string())
+    })?;
     Ok(Json(RelayResp { tx_hash }))
 }
 
