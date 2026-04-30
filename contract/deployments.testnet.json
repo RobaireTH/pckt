@@ -1,0 +1,10 @@
+{
+  "packet_lock": {
+    "code_hash": "0xd32c718bf52729197811c5077330719d801e2fddf81eec6407c5005151f798f1",
+    "hash_type": "data1",
+    "out_point": {
+      "tx_hash": "0xb1d1b8994b3b929fbe75beda7b066e22ace8c189ca8e21dabe8c6d533647c833",
+      "index": "0x0"
+    }
+  }
+}
