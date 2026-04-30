@@ -7,9 +7,9 @@ import {
   bytesFrom,
   hashCkb,
   hexFrom,
-  stringify,
   type Hex,
   type Signer,
+  type TransactionLike,
 } from '@ckb-ccc/connector-react';
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { createShortlink, relayTransaction } from './api';
@@ -47,6 +47,49 @@ function pktType(t: Draft['type']) {
 
 function nowSec() {
   return Math.floor(Date.now() / 1000);
+}
+
+function toRpcTransaction(txLike: TransactionLike) {
+  const tx = Transaction.from(txLike);
+  return {
+    version: toRpcHex(tx.version),
+    cell_deps: tx.cellDeps.map(dep => ({
+      out_point: {
+        tx_hash: dep.outPoint.txHash,
+        index: toRpcHex(dep.outPoint.index),
+      },
+      dep_type: dep.depType === 'depGroup' ? 'dep_group' : 'code',
+    })),
+    header_deps: tx.headerDeps,
+    inputs: tx.inputs.map(input => ({
+      previous_output: {
+        tx_hash: input.previousOutput.txHash,
+        index: toRpcHex(input.previousOutput.index),
+      },
+      since: toRpcHex(input.since),
+    })),
+    outputs: tx.outputs.map(output => ({
+      capacity: toRpcHex(output.capacity),
+      lock: {
+        code_hash: output.lock.codeHash,
+        hash_type: output.lock.hashType,
+        args: output.lock.args,
+      },
+      type: output.type
+        ? {
+            code_hash: output.type.codeHash,
+            hash_type: output.type.hashType,
+            args: output.type.args,
+          }
+        : null,
+    })),
+    outputs_data: tx.outputsData,
+    witnesses: tx.witnesses,
+  };
+}
+
+function toRpcHex(value: bigint | number | string) {
+  return `0x${BigInt(value).toString(16)}`;
 }
 
 export async function buildAndRelaySealTx(params: {
@@ -99,7 +142,7 @@ export async function buildAndRelaySealTx(params: {
   await tx.completeInputsByCapacity(signer, capacity);
   await tx.completeFeeBy(signer);
   const signed = await signer.signTransaction(tx);
-  const signedJson = JSON.parse(stringify(signed));
+  const signedJson = toRpcTransaction(signed);
   const { tx_hash } = await relayTransaction(signedJson);
 
   const claimLink = `${window.location.origin}/#/claim/${encodeURIComponent(claimPubkeyHash)}/${encodeURIComponent(hexFrom(claimSk))}`;
@@ -182,7 +225,7 @@ export async function buildAndRelayClaimTx(params: {
   tx.setWitnessArgsAt(0, WitnessArgs.from({ lock: encodeClaimWitness(sigHex, claimerLockHash) }));
 
   const signed = await signer.signTransaction(tx);
-  const signedJson = JSON.parse(stringify(signed));
+  const signedJson = toRpcTransaction(signed);
   const { tx_hash } = await relayTransaction(signedJson);
   return { txHash: tx_hash, payout };
 }
