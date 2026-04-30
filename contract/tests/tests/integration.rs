@@ -1,3 +1,4 @@
+use blake2b_ref::Blake2bBuilder;
 use ckb_testtool::builtin::ALWAYS_SUCCESS;
 use ckb_testtool::ckb_types::{
     bytes::Bytes,
@@ -11,7 +12,6 @@ use pckt_schema::{
     Byte16, Byte32, Byte32Vec, Byte33, Bytes as MolBytes, Claim, PacketAction, PacketData,
     PacketWitness, Reclaim, Uint64,
 };
-use blake2b_ref::Blake2bBuilder;
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 
 const MAX_CYCLES: u64 = 70_000_000;
@@ -651,7 +651,10 @@ fn timed_claim_before_unlock_rejected() {
     let tx = env.ctx.complete_tx(tx);
     let err = env.ctx.verify_tx(&tx, MAX_CYCLES).unwrap_err();
     let msg = format!("{err:?}");
-    assert!(msg.contains("error code 53"), "expected TooEarly (53), got: {msg}");
+    assert!(
+        msg.contains("error code 53"),
+        "expected TooEarly (53), got: {msg}"
+    );
 }
 
 #[test]
@@ -737,7 +740,9 @@ fn timed_claim_after_unlock_passes() {
     assert_eq!(tx.outputs().len(), 2);
     assert_eq!(tx.outputs_data().len(), 2);
     let tx = env.ctx.complete_tx(tx);
-    env.ctx.verify_tx(&tx, MAX_CYCLES).expect("timed claim passes");
+    env.ctx
+        .verify_tx(&tx, MAX_CYCLES)
+        .expect("timed claim passes");
 }
 
 #[test]

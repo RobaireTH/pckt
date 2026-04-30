@@ -133,7 +133,8 @@ fn verify_successor(pd: &PacketData, claim: &Claim, payout: u64) -> Result<(), E
         return Ok(());
     }
     let succ_index = succ_index.ok_or(Error::SuccessorMissing)?;
-    let succ_data = load_cell_data(succ_index, Source::Output).map_err(|_| Error::SuccessorMissing)?;
+    let succ_data =
+        load_cell_data(succ_index, Source::Output).map_err(|_| Error::SuccessorMissing)?;
     let succ = PacketData::from_slice(&succ_data).map_err(|_| Error::SuccessorBadData)?;
 
     if pd.version().as_slice() != succ.version().as_slice()
