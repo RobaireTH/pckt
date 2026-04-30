@@ -35,11 +35,12 @@ export function Activity({
   claimedPackets: ClaimedPacket[];
 }) {
   const [filter, setFilter] = useState<Filter>('all');
-  const now = Date.now() / 1000;
+  const nowSec = Date.now() / 1000;
+  const nowMs = Date.now();
   const rows: LedgerRow[] = [
     ...sentPackets.map(p => {
       const kind = packetTypeInfo(p.packet_type).shortLabel;
-      const ageDays = (now - packetMoment(p)) / 86400;
+      const ageDays = (nowSec - packetMoment(p)) / 86400;
       return {
         direction: 'out' as const,
         kind,
@@ -52,7 +53,7 @@ export function Activity({
     }),
     ...claimedPackets.map(p => {
       const kind = packetTypeInfo(p.packet_type).shortLabel;
-      const ageDays = (now - p.claim_ts) / 86400;
+      const ageDays = (nowMs - p.claim_ts) / 86400000;
       const slotCkb = p.slot_amount ? Number(p.slot_amount) / 100000000 : 0;
       return {
         direction: 'in' as const,
@@ -60,7 +61,7 @@ export function Activity({
         title: p.message_body || packetTypeInfo(p.packet_type).label,
         meta: `${kind} · from ${ownerLabel(p.owner_lock_hash, 'sender')}`,
         amount: `+${slotCkb.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
-        at: new Date(p.claim_ts * 1000).toLocaleDateString(),
+        at: new Date(p.claim_ts).toLocaleDateString(),
         group: ageGroup(ageDays),
       };
     }),
