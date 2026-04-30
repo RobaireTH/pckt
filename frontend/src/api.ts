@@ -41,7 +41,7 @@ async function parseError(res: Response): Promise<string> {
   try {
     const body = JSON.parse(text) as ApiErrorBody;
     if (body.message) {
-      return `${res.status} ${body.message}`;
+      return body.message;
     }
   } catch {}
   return `${res.status} ${text}`;

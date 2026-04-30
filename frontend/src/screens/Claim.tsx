@@ -14,6 +14,20 @@ import { buildAndRelayClaimTx } from '../tx';
 
 type Props = { onOpen: () => void; outPoint: string | null };
 
+function claimErrorMessage(raw: string): string {
+  const cleaned = raw.replace(/^Error:\s*/, '');
+  if (cleaned.includes('error code 55') || cleaned.includes('already claimed')) {
+    return 'This wallet already claimed this packet.';
+  }
+  if (cleaned.includes('error code 54') || cleaned.includes('fully claimed')) {
+    return 'This packet has already been fully claimed.';
+  }
+  if (cleaned.includes('error code 53') || cleaned.includes('still sealed')) {
+    return 'This packet is still sealed and cannot be claimed yet.';
+  }
+  return cleaned;
+}
+
 export function Claim({ onOpen, outPoint }: Props) {
   const [opened, setOpened] = useState(false);
   const [packet, setPacket] = useState<PacketSummary | null>(null);
@@ -52,7 +66,7 @@ export function Claim({ onOpen, outPoint }: Props) {
         }
       },
       e => {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) setError(claimErrorMessage(String(e)));
       },
     ).finally(() => {
       if (!cancelled) setLoading(false);
@@ -114,7 +128,7 @@ export function Claim({ onOpen, outPoint }: Props) {
       setPayout(result.payout);
       setOpened(true);
     } catch (e) {
-      setError(String(e));
+      setError(claimErrorMessage(String(e)));
     } finally {
       setClaiming(false);
     }
