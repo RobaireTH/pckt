@@ -228,6 +228,14 @@
     width: 160px !important;
     flex-shrink: 0 !important;
   }
+  .pckt-active-scroll[data-layout='grid'] {
+    grid-template-columns: repeat(auto-fit, 160px);
+    padding-right: 0;
+  }
+  .pckt-active-scroll[data-layout='grid'] > * {
+    width: 160px !important;
+    flex-shrink: 0 !important;
+  }
   .pckt-active-card {
     width: 160px !important;
   }
