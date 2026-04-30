@@ -219,16 +219,17 @@
   .pckt-active-scroll {
     overflow: visible;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, 160px);
     gap: 24px;
     padding: 8px 0;
+    justify-content: start;
   }
   .pckt-active-scroll > * {
-    width: auto !important;
-    flex-shrink: 1 !important;
+    width: 160px !important;
+    flex-shrink: 0 !important;
   }
   .pckt-active-card {
-    width: 100% !important;
+    width: 160px !important;
   }
 }
 

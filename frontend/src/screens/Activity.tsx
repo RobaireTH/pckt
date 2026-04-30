@@ -35,19 +35,19 @@ export function Activity({
   claimedPackets: ClaimedPacket[];
 }) {
   const [filter, setFilter] = useState<Filter>('all');
-  const nowSec = Date.now() / 1000;
   const nowMs = Date.now();
   const rows: LedgerRow[] = [
     ...sentPackets.map(p => {
       const kind = packetTypeInfo(p.packet_type).shortLabel;
-      const ageDays = (nowSec - packetMoment(p)) / 86400;
+      const tsMs = (p.sealed_at ?? packetMoment(p)) * 1000;
+      const ageDays = (nowMs - tsMs) / 86400000;
       return {
         direction: 'out' as const,
         kind,
         title: p.message_body || packetTypeInfo(p.packet_type).label,
         meta: `${kind} · ${p.slots_claimed}/${p.slots_total} claimed`,
         amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
-        at: new Date(packetMoment(p) * 1000).toLocaleDateString(),
+        at: new Date(tsMs).toLocaleDateString(),
         group: ageGroup(ageDays),
       };
     }),

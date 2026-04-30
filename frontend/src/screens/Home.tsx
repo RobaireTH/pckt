@@ -59,14 +59,17 @@ export function Home({ onSend, onClaim, onOpenActivity, sentPackets, claimedPack
   );
   const usd = walletBalanceCkb !== null && priceUsd ? (walletBalanceCkb * priceUsd).toFixed(2) : null;
   const ledger: LedgerRow[] = [
-    ...sentPackets.map(p => ({
-      direction: 'out' as const,
-      title: p.message_body || packetTypeInfo(p.packet_type).label,
-      meta: `${packetTypeInfo(p.packet_type).shortLabel} · ${p.slots_claimed}/${p.slots_total} claimed`,
-      amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
-      at: new Date(packetMoment(p) * 1000).toLocaleDateString(),
-      ts: packetMoment(p),
-    })),
+    ...sentPackets.map(p => {
+      const tsMs = (p.sealed_at ?? packetMoment(p)) * 1000;
+      return {
+        direction: 'out' as const,
+        title: p.message_body || packetTypeInfo(p.packet_type).label,
+        meta: `${packetTypeInfo(p.packet_type).shortLabel} · ${p.slots_claimed}/${p.slots_total} claimed`,
+        amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
+        at: new Date(tsMs).toLocaleDateString(),
+        ts: tsMs,
+      };
+    }),
     ...claimedPackets.map(p => {
       const amount = p.slot_amount ? Number(p.slot_amount) / 100000000 : 0;
       return {
@@ -74,7 +77,7 @@ export function Home({ onSend, onClaim, onOpenActivity, sentPackets, claimedPack
         title: p.message_body || packetTypeInfo(p.packet_type).label,
         meta: `${packetTypeInfo(p.packet_type).shortLabel} · from ${ownerLabel(p.owner_lock_hash, 'sender')}`,
         amount: `+${amount.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
-        at: new Date(p.claim_ts * 1000).toLocaleDateString(),
+        at: new Date(p.claim_ts).toLocaleDateString(),
         ts: p.claim_ts,
       };
     }),

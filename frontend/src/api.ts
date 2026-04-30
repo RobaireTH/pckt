@@ -13,6 +13,7 @@ export type PacketSummary = {
   claim_pubkey_hash?: string;
   salt?: string;
   message_body?: string | null;
+  sealed_at?: number;
 };
 
 export type PacketEvent = {

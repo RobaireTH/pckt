@@ -24,6 +24,7 @@ type SummaryRow = (
     String,
     Vec<u8>,
     Option<String>,
+    i64,
 );
 type ListRow = (
     String,
@@ -39,6 +40,7 @@ type ListRow = (
     Vec<u8>,
     Option<String>,
     i64,
+    i64,
 );
 type ClaimedRow = (
     String,
@@ -53,6 +55,7 @@ type ClaimedRow = (
     String,
     Vec<u8>,
     Option<String>,
+    i64,
     String,
     i64,
     Option<String>,
@@ -62,7 +65,7 @@ type EventRow = (String, String, i64, i64, Option<String>, Option<String>);
 const SELECT_SUMMARY: &str = r#"
     SELECT out_point, packet_type, slots_total, slots_claimed,
            initial_capacity, current_capacity, expiry, unlock_time,
-           owner_lock_hash, claim_pubkey_hash, salt, message_body
+           owner_lock_hash, claim_pubkey_hash, salt, message_body, sealed_at
     FROM packets
 "#;
 
@@ -90,6 +93,7 @@ pub struct PacketSummary {
     pub claim_pubkey_hash: String,
     pub salt: String,
     pub message_body: Option<String>,
+    pub sealed_at: u64,
 }
 
 #[derive(Serialize)]
@@ -128,6 +132,7 @@ fn row_to_summary(r: SummaryRow) -> PacketSummary {
             r.10.iter().map(|b| format!("{b:02x}")).collect::<String>()
         ),
         message_body: r.11,
+        sealed_at: r.12 as u64,
     }
 }
 
@@ -145,7 +150,7 @@ pub async fn list(
         )
         SELECT p.out_point, p.packet_type, p.slots_total, p.slots_claimed,
                p.initial_capacity, p.current_capacity, p.expiry, p.unlock_time,
-               p.owner_lock_hash, p.claim_pubkey_hash, p.salt, p.message_body,
+               p.owner_lock_hash, p.claim_pubkey_hash, p.salt, p.message_body, p.sealed_at,
                p.last_seen_block
         FROM packets p
         JOIN latest l
@@ -163,7 +168,9 @@ pub async fn list(
     Ok(Json(
         rows.into_iter()
             .map(|r| {
-                row_to_summary((r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10, r.11))
+                row_to_summary((
+                    r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10, r.11, r.12,
+                ))
             })
             .collect(),
     ))
@@ -194,7 +201,7 @@ pub async fn claimed(
     let sql = r#"
         SELECT p.out_point, p.packet_type, p.slots_total, p.slots_claimed,
                p.initial_capacity, p.current_capacity, p.expiry, p.unlock_time,
-               p.owner_lock_hash, p.claim_pubkey_hash, p.salt, p.message_body,
+               p.owner_lock_hash, p.claim_pubkey_hash, p.salt, p.message_body, p.sealed_at,
                e.tx_hash, e.ts, e.slot_amount
         FROM packets p
         JOIN packet_events e ON e.out_point = p.out_point
@@ -214,11 +221,11 @@ pub async fn claimed(
         rows.into_iter()
             .map(|r| ClaimedPacket {
                 packet: row_to_summary((
-                    r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10, r.11,
+                    r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10, r.11, r.12,
                 )),
-                claim_tx_hash: r.12,
-                claim_ts: r.13 as u64,
-                slot_amount: r.14,
+                claim_tx_hash: r.13,
+                claim_ts: r.14 as u64,
+                slot_amount: r.15,
             })
             .collect(),
     ))
