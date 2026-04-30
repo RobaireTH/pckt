@@ -84,6 +84,11 @@ export function toCkb(shannons: bigint): number {
   return Number(shannons) / Number(SHANNONS);
 }
 
+export function ownerLabel(ownerLockHash?: string | null, fallback = 'unknown') {
+  if (!ownerLockHash) return fallback;
+  return `${ownerLockHash.slice(0, 6)}…${ownerLockHash.slice(-4)}`;
+}
+
 export function recipientCellCapacity(lock: ScriptLike): bigint {
   return BigInt(CellOutput.from({ lock }, '0x').capacity.toString());
 }
@@ -121,7 +126,7 @@ export function predictClaimPayout(packet: PacketSummary): bigint {
   const lower = MIN_SLOT_SHANNONS;
   const range = upper - lower;
   if (range <= 0n) return lower;
-  return lower + (slotSeed(packet.salt, packet.slots_claimed) % range);
+  return lower + (slotSeed(packet.salt ?? '0x', packet.slots_claimed) % range);
 }
 
 function slotSeed(salt: HexLike, slotIndex: number): bigint {

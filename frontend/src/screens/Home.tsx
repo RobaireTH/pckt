@@ -4,7 +4,7 @@ import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
 import type { ClaimedPacket, PacketSummary } from '../api';
-import { packetMoment, packetTypeInfo, toCkb } from '../packets';
+import { ownerLabel, packetMoment, packetTypeInfo, toCkb } from '../packets';
 
 type Props = {
   onSend: () => void;
@@ -44,7 +44,7 @@ export function Home({ onSend, onClaim, onOpenActivity, sentPackets, claimedPack
       kind: info.shortLabel,
       meta: `${p.slots_claimed} / ${p.slots_total} claimed`,
       variant: info.variant,
-      from: wallet?.shortAddress ?? `${p.owner_lock_hash.slice(0, 6)}…${p.owner_lock_hash.slice(-4)}`,
+      from: wallet?.shortAddress ?? ownerLabel(p.owner_lock_hash, 'sender'),
       message: p.message_body || '',
     };
   });
@@ -68,7 +68,7 @@ export function Home({ onSend, onClaim, onOpenActivity, sentPackets, claimedPack
       return {
         direction: 'in' as const,
         title: p.message_body || packetTypeInfo(p.packet_type).label,
-        meta: `${packetTypeInfo(p.packet_type).shortLabel} · from ${p.owner_lock_hash.slice(0, 6)}…${p.owner_lock_hash.slice(-4)}`,
+        meta: `${packetTypeInfo(p.packet_type).shortLabel} · from ${ownerLabel(p.owner_lock_hash, 'sender')}`,
         amount: `+${amount.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
         at: new Date(p.claim_ts * 1000).toLocaleDateString(),
         ts: p.claim_ts,

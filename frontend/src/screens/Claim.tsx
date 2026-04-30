@@ -5,6 +5,7 @@ import { fetchPacket, fetchPacketByPubkey, type PacketSummary } from '../api';
 import { useWallet } from '../hooks/useWallet';
 import {
   MIN_CLAIM_CELL_SHANNONS,
+  ownerLabel,
   packetTypeInfo,
   predictClaimPayout,
   recipientCellCapacity,
@@ -76,9 +77,7 @@ export function Claim({ onOpen, outPoint }: Props) {
     };
   }, [outPoint, claimPubkey]);
 
-  const from = packet
-    ? `${packet.owner_lock_hash.slice(0, 6)}…${packet.owner_lock_hash.slice(-4)}`
-    : 'unknown';
+  const from = packet ? ownerLabel(packet.owner_lock_hash) : 'unknown';
   const message = packet?.message_body || 'A packet for you';
   const remaining = packet ? Math.max(0, packet.slots_total - packet.slots_claimed) : 0;
   const totalCkb = packet ? Math.floor(Number(packet.current_capacity) / 100000000) : 0;

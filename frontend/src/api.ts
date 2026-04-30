@@ -9,10 +9,10 @@ export type PacketSummary = {
   current_capacity: string;
   expiry: number;
   unlock_time: number;
-  owner_lock_hash: string;
-  claim_pubkey_hash: string;
-  salt: string;
-  message_body: string | null;
+  owner_lock_hash?: string;
+  claim_pubkey_hash?: string;
+  salt?: string;
+  message_body?: string | null;
 };
 
 export type PacketEvent = {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Chip } from '../components/ui/Chip';
 import type { ClaimedPacket, PacketSummary } from '../api';
-import { packetMoment, packetTypeInfo } from '../packets';
+import { ownerLabel, packetMoment, packetTypeInfo } from '../packets';
 
 type LedgerRow = {
   direction: 'in' | 'out';
@@ -58,7 +58,7 @@ export function Activity({
         direction: 'in' as const,
         kind,
         title: p.message_body || packetTypeInfo(p.packet_type).label,
-        meta: `${kind} · from ${p.owner_lock_hash.slice(0, 6)}…${p.owner_lock_hash.slice(-4)}`,
+        meta: `${kind} · from ${ownerLabel(p.owner_lock_hash, 'sender')}`,
         amount: `+${slotCkb.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
         at: new Date(p.claim_ts * 1000).toLocaleDateString(),
         group: ageGroup(ageDays),

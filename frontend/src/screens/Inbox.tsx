@@ -3,7 +3,7 @@ import { Icon } from '../components/ui/Icon';
 import { Chip } from '../components/ui/Chip';
 import { Packet } from '../components/Packet';
 import type { PacketSummary } from '../api';
-import { packetMoment, packetTypeInfo } from '../packets';
+import { ownerLabel, packetMoment, packetTypeInfo } from '../packets';
 
 type InboxItem = {
   id: string;
@@ -33,7 +33,7 @@ export function Inbox({ packets }: Props) {
     const info = packetTypeInfo(p.packet_type);
     return {
       id: p.out_point,
-      from: `${p.owner_lock_hash.slice(0, 6)}…${p.owner_lock_hash.slice(-4)}`,
+      from: ownerLabel(p.owner_lock_hash, 'sender'),
       message: p.message_body || 'A packet for you',
       status,
       variant: status === 'claimed' ? 'foil' : info.variant,
