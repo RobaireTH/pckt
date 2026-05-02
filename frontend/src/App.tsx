@@ -103,12 +103,14 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!lockHash) {
+      setSentPackets([]);
+      setClaimedPackets([]);
+      return;
+    }
     // Backend indexes packets by the lock script hash (`owner_lock_hash`),
     // not the human-readable wallet address.
-    const owner = lockHash ?? undefined;
-    const sentReq = fetchPackets(owner);
-    const claimedReq = lockHash ? fetchClaimedPackets(lockHash) : Promise.resolve([]);
-    Promise.allSettled([sentReq, claimedReq]).then(results => {
+    Promise.allSettled([fetchPackets(lockHash), fetchClaimedPackets(lockHash)]).then(results => {
       if (cancelled) return;
       const [sent, claimed] = results;
       setSentPackets(sent.status === 'fulfilled' ? sent.value : []);
