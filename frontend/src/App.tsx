@@ -12,6 +12,7 @@ import { Profile } from './screens/Profile';
 import { AppShell } from './components/layout/AppShell';
 import { Button } from './components/ui/Button';
 import { Alert } from './components/ui/Alert';
+import { NotificationsPanel } from './components/NotificationsPanel';
 import { useWallet } from './hooks/useWallet';
 import { useNotifications } from './hooks/useNotifications';
 import { friendlyError } from './errors';
@@ -130,7 +131,38 @@ export function App() {
     };
   }, [lockHash, route, refreshNonce]);
 
-  useNotifications({ sentPackets, claimedPackets, enabled: !!lockHash });
+  const { feed, unreadCount, markAllRead, clearAll } = useNotifications({
+    sentPackets,
+    claimedPackets,
+    lockHash,
+  });
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifPermission, setNotifPermission] = useState<
+    'granted' | 'denied' | 'default' | 'unsupported'
+  >(() =>
+    typeof Notification === 'undefined'
+      ? 'unsupported'
+      : (Notification.permission as 'granted' | 'denied' | 'default'),
+  );
+
+  useEffect(() => {
+    const sync = () => {
+      if (typeof Notification === 'undefined') {
+        setNotifPermission('unsupported');
+        return;
+      }
+      setNotifPermission(Notification.permission as 'granted' | 'denied' | 'default');
+    };
+    window.addEventListener('focus', sync);
+    return () => window.removeEventListener('focus', sync);
+  }, []);
+
+  const requestNotifPermission = async () => {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'default') return;
+    const result = await Notification.requestPermission();
+    setNotifPermission(result as 'granted' | 'denied' | 'default');
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -247,6 +279,8 @@ export function App() {
           onSend={() => go('create')}
           onClaim={() => go('inbox')}
           onOpenActivity={() => go('activity')}
+          onOpenNotifications={() => setNotifOpen(true)}
+          notificationsUnread={unreadCount}
           sentPackets={sentPackets}
           claimedPackets={claimedPackets}
           priceUsd={priceUsd}
@@ -384,6 +418,15 @@ export function App() {
           </div>
         </div>
       )}
+      <NotificationsPanel
+        open={notifOpen}
+        feed={feed}
+        onClose={() => setNotifOpen(false)}
+        onMarkAllRead={markAllRead}
+        onClear={clearAll}
+        notifPermission={notifPermission}
+        onEnableNotifications={requestNotifPermission}
+      />
     </AppShell>
   );
 }

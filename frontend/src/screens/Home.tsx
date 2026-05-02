@@ -11,6 +11,8 @@ type Props = {
   onSend: () => void;
   onClaim: () => void;
   onOpenActivity: () => void;
+  onOpenNotifications?: () => void;
+  notificationsUnread?: number;
   sentPackets: PacketSummary[];
   claimedPackets: ClaimedPacket[];
   priceUsd: number | null;
@@ -34,7 +36,7 @@ type LedgerRow = {
   ts: number;
 };
 
-export function Home({ onSend, onClaim, onOpenActivity, sentPackets, claimedPackets, priceUsd }: Props) {
+export function Home({ onSend, onClaim, onOpenActivity, onOpenNotifications, notificationsUnread = 0, sentPackets, claimedPackets, priceUsd }: Props) {
   const { wallet, openConnect, balance } = useWallet();
   const displayName = wallet?.shortAddress ?? 'Guest';
   const initials = wallet?.initials ?? '??';
@@ -113,7 +115,35 @@ export function Home({ onSend, onClaim, onOpenActivity, sentPackets, claimedPack
             </div>
           </div>
         </div>
-        <IconBtn name="bell" />
+        <div style={{ position: 'relative' }}>
+          <IconBtn name="bell" onClick={onOpenNotifications} />
+          {notificationsUnread > 0 && (
+            <span
+              aria-label={`${notificationsUnread} unread notifications`}
+              style={{
+                position: 'absolute',
+                top: -4,
+                right: -4,
+                minWidth: 18,
+                height: 18,
+                padding: '0 5px',
+                borderRadius: 9,
+                background: 'var(--crimson-600)',
+                color: '#fff',
+                fontSize: 10,
+                fontWeight: 700,
+                fontFamily: 'var(--font-mono)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '2px solid var(--bg)',
+                pointerEvents: 'none',
+              }}
+            >
+              {notificationsUnread > 9 ? '9+' : notificationsUnread}
+            </span>
+          )}
+        </div>
       </header>
 
       <style>{`
