@@ -24,7 +24,7 @@ const BLAKE_PERSONAL: &[u8] = b"ckb-default-hash";
 const SINCE_FLAG_ABS_TS: u8 = 0x40;
 const SINCE_VALUE_MASK: u64 = 0x00FF_FFFF_FFFF_FFFF;
 
-const MIN_SLOT_SHANNONS: u64 = 100_000_000;
+const MIN_SLOT_SHANNONS: u64 = 6_300_000_000;
 
 const SHANNONS_PER_BYTE: u64 = 100_000_000;
 const PD_FIXED_BYTES: u64 = 169;

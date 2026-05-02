@@ -90,7 +90,7 @@ export const SHANNONS_PER_BYTE = 100_000_000n;
 export const PD_FIXED_BYTES = 169n;
 export const PD_HEADER_BYTES = 52n;
 export const CELL_OVERHEAD_BYTES = 57n;
-export const MIN_SLOT_SHANNONS = 100_000_000n;
+export const MIN_SLOT_SHANNONS = 6_300_000_000n;
 
 export function maxFloor(slotsTotal: number, messageLen: number): bigint {
   const maxLocks = BigInt(slotsTotal) - 1n;
