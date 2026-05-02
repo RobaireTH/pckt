@@ -86,6 +86,10 @@ export function useNotifications(opts: {
   const [feed, setFeed] = useState<NotifEntry[]>([]);
   const snapRef = useRef<Snapshot | null>(null);
   const lockRef = useRef<string | null>(null);
+  // Per-session flag (resets every page load). On the first sync after the
+  // app mounts we silently reconcile state without firing OS notifications,
+  // so reloads never replay accumulated chain activity as a notification dump.
+  const firstSyncRef = useRef<Record<string, boolean>>({});
 
   // Load persisted snapshot when wallet (lockHash) changes.
   useEffect(() => {
@@ -99,6 +103,9 @@ export function useNotifications(opts: {
       const snap = loadSnapshot(lockHash);
       snapRef.current = snap;
       lockRef.current = lockHash;
+      if (firstSyncRef.current[lockHash] === undefined) {
+        firstSyncRef.current[lockHash] = true;
+      }
       setFeed(snap.feed);
     }
   }, [lockHash]);
@@ -111,8 +118,13 @@ export function useNotifications(opts: {
 
     const now = Math.floor(Date.now() / 1000);
     const newEntries: NotifEntry[] = [];
+    // True only the first time this hook syncs state during the current page
+    // session, regardless of whether persisted state already exists. Used to
+    // suppress OS notifications on reload (so the user doesn't get a dump).
+    const isFirstSyncThisSession = firstSyncRef.current[lockHash] !== false;
+    firstSyncRef.current[lockHash] = false;
 
-    // First sync after a fresh wallet — snapshot silently as baseline.
+    // First sync ever for this wallet — snapshot silently as baseline.
     if (!snap.initialized) {
       for (const p of sentPackets) {
         snap.sent[p.out_point] = {
@@ -174,8 +186,13 @@ export function useNotifications(opts: {
           return parts.join(' · ');
         })();
 
-        newEntries.push({ id, kind: isFinal ? 'fully_claimed' : 'claim_out', title, body, ts, read: false, outPoint: p.out_point });
-        fireSystemNotification(title, body, `pckt:claim:${p.out_point}:${p.slots_claimed}`);
+        // On the first sync of a session we don't have a real per-claim
+        // timestamp (the indexer doesn't expose one for sender-side claims),
+        // so we add a quiet, pre-read entry rather than fire an OS notif.
+        newEntries.push({ id, kind: isFinal ? 'fully_claimed' : 'claim_out', title, body, ts, read: isFirstSyncThisSession, outPoint: p.out_point });
+        if (!isFirstSyncThisSession) {
+          fireSystemNotification(title, body, `pckt:claim:${p.out_point}:${p.slots_claimed}`);
+        }
 
         snap.sent[p.out_point] = {
           slotsClaimed: p.slots_claimed,
@@ -195,7 +212,9 @@ export function useNotifications(opts: {
       ) {
         snap.expiryNotified.push(p.out_point);
         const leftover = Math.max(0, p.slots_total - p.slots_claimed);
-        const ts = Date.now();
+        // Use the on-chain expiry as the canonical event timestamp so the
+        // feed reads "expired 2h ago" rather than "just now".
+        const ts = p.expiry * 1000;
         const title = 'Time to reclaim';
         let amountStr: string | null = null;
         try {
@@ -204,13 +223,15 @@ export function useNotifications(opts: {
         const body = amountStr
           ? `Your packet expired with ${amountStr} CKB and ${leftover} unclaimed slot${leftover === 1 ? '' : 's'} inside. Tap to reclaim.`
           : `Your packet expired with ${leftover} unclaimed slot${leftover === 1 ? '' : 's'}. Tap to reclaim.`;
-        newEntries.push({ id: makeId('reclaim', ts), kind: 'reclaim_ready', title, body, ts, read: false, outPoint: p.out_point });
-        fireSystemNotification(title, body, `pckt:reclaim:${p.out_point}`);
+        newEntries.push({ id: makeId('reclaim', ts), kind: 'reclaim_ready', title, body, ts, read: isFirstSyncThisSession, outPoint: p.out_point });
+        if (!isFirstSyncThisSession) {
+          fireSystemNotification(title, body, `pckt:reclaim:${p.out_point}`);
+        }
       }
     }
 
-    // Drop entries from the persisted sent map that have disappeared from the API
-    // (e.g. packet pruned). Keeps the snapshot from growing unbounded.
+    // Drop entries from the persisted sent map that have disappeared from the
+    // API (e.g. packet pruned). Keeps the snapshot from growing unbounded.
     for (const k of Object.keys(snap.sent)) {
       if (!seenSent.has(k)) delete snap.sent[k];
     }
@@ -224,18 +245,23 @@ export function useNotifications(opts: {
 
       const amount = c.slot_amount ? toCkb(BigInt(c.slot_amount)) : 0;
       const from = ownerLabel(c.owner_lock_hash, 'someone', c.owner_address, c.owner_name);
-      const ts = Date.now();
+      // Prefer the indexer-recorded claim time so reloads keep the real ts.
+      const ts = c.claim_ts ? c.claim_ts * 1000 : Date.now();
       const title = amount > 0 ? `+${amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} CKB landed` : 'You opened a packet';
       const messagePart = c.message_body ? ` · "${c.message_body}"` : '';
       const body = amount > 0
         ? `From ${from}${messagePart}`
         : `Settled to your wallet from ${from}.${messagePart}`;
-      newEntries.push({ id: makeId('claim_in', ts), kind: 'claim_in', title, body, ts, read: false, outPoint: c.out_point });
-      fireSystemNotification(title, body, `pckt:claim_in:${c.out_point}`);
+      newEntries.push({ id: makeId('claim_in', ts), kind: 'claim_in', title, body, ts, read: isFirstSyncThisSession, outPoint: c.out_point });
+      if (!isFirstSyncThisSession) {
+        fireSystemNotification(title, body, `pckt:claim_in:${c.out_point}`);
+      }
     }
 
     if (newEntries.length > 0) {
-      snap.feed = [...newEntries, ...snap.feed].slice(0, FEED_LIMIT);
+      snap.feed = [...newEntries, ...snap.feed]
+        .sort((a, b) => b.ts - a.ts)
+        .slice(0, FEED_LIMIT);
       setFeed(snap.feed);
     }
     persistSnapshot(lockHash, snap);
