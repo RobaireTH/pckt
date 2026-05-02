@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../components/ui/Button';
+import { Alert } from '../components/ui/Alert';
 import { Packet } from '../components/Packet';
 import { fetchPacket, fetchPacketByPubkey, type PacketSummary } from '../api';
 import { useWallet } from '../hooks/useWallet';
+import { friendlyError, type FriendlyError } from '../errors';
 import {
   explorerTxUrl,
   MIN_CLAIM_CELL_SHANNONS,
@@ -16,24 +18,10 @@ import { buildAndRelayClaimTx } from '../tx';
 
 type Props = { onOpen: () => void; outPoint: string | null };
 
-function claimErrorMessage(raw: string): string {
-  const cleaned = raw.replace(/^Error:\s*/, '');
-  if (cleaned.includes('error code 55') || cleaned.includes('already claimed')) {
-    return 'This wallet already claimed this packet.';
-  }
-  if (cleaned.includes('error code 54') || cleaned.includes('fully claimed')) {
-    return 'This packet has already been fully claimed.';
-  }
-  if (cleaned.includes('error code 53') || cleaned.includes('still sealed')) {
-    return 'This packet is still sealed and cannot be claimed yet.';
-  }
-  return cleaned;
-}
-
 export function Claim({ onOpen, outPoint }: Props) {
   const [opened, setOpened] = useState(false);
   const [packet, setPacket] = useState<PacketSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FriendlyError | null>(null);
   const [loading, setLoading] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [payout, setPayout] = useState<bigint | null>(null);
@@ -69,7 +57,7 @@ export function Claim({ onOpen, outPoint }: Props) {
         }
       },
       e => {
-        if (!cancelled) setError(claimErrorMessage(String(e)));
+        if (!cancelled) setError(friendlyError(e, 'claim'));
       },
     ).finally(() => {
       if (!cancelled) setLoading(false);
@@ -107,15 +95,18 @@ export function Claim({ onOpen, outPoint }: Props) {
       return;
     }
     if (!targetOutPoint) {
-      setError('No packet selected');
+      setError({ title: 'No packet selected', message: 'Open a pckt claim link to continue.' });
       return;
     }
     if (!claimSk) {
-      setError('Missing claim key in link');
+      setError({
+        title: 'Incomplete link',
+        message: 'This link is missing the claim key. Ask the sender for the original share link.',
+      });
       return;
     }
     if (claimCapacityError) {
-      setError(claimCapacityError);
+      setError({ title: 'Claim too small', message: claimCapacityError });
       return;
     }
     setClaiming(true);
@@ -130,7 +121,7 @@ export function Claim({ onOpen, outPoint }: Props) {
       setClaimTxHash(result.txHash);
       setOpened(true);
     } catch (e) {
-      setError(claimErrorMessage(String(e)));
+      setError(friendlyError(e, 'claim'));
     } finally {
       setClaiming(false);
     }
@@ -175,11 +166,21 @@ export function Claim({ onOpen, outPoint }: Props) {
 
       <div style={{ marginTop: 36, width: '100%', maxWidth: 360 }}>
         {loading && <div style={{ textAlign: 'center', color: 'var(--fg-muted)', marginBottom: 12 }}>Loading claim details…</div>}
-        {(error || claimCapacityError) && (
-          <div style={{ textAlign: 'center', color: 'var(--danger)', marginBottom: 12 }}>
-            {error || claimCapacityError}
+        {error ? (
+          <div style={{ marginBottom: 12 }}>
+            <Alert
+              tone="error"
+              title={error.title}
+              message={error.message}
+              hint={error.hint}
+              onDismiss={() => setError(null)}
+            />
           </div>
-        )}
+        ) : claimCapacityError ? (
+          <div style={{ marginBottom: 12 }}>
+            <Alert tone="warning" title="Claim too small" message={claimCapacityError} />
+          </div>
+        ) : null}
         {!opened ? (
           <>
             <Button

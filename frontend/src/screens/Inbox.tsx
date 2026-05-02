@@ -2,9 +2,11 @@ import { Button } from '../components/ui/Button';
 import { useState } from 'react';
 import { Icon } from '../components/ui/Icon';
 import { Chip } from '../components/ui/Chip';
+import { Alert } from '../components/ui/Alert';
 import { Packet } from '../components/Packet';
 import type { PacketSummary } from '../api';
 import { useWallet } from '../hooks/useWallet';
+import { friendlyError, type FriendlyError } from '../errors';
 import { formatDate, formatDateTime } from '../locale';
 import { ownerLabel, packetMoment, packetTypeInfo } from '../packets';
 import { buildAndRelayReclaimTx } from '../tx';
@@ -29,7 +31,7 @@ type Props = { packets: PacketSummary[]; onRefresh: () => void };
 export function Inbox({ packets, onRefresh }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
   const [reclaimingId, setReclaimingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FriendlyError | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const { wallet, signer, openConnect } = useWallet();
   const now = Math.floor(Date.now() / 1000);
@@ -78,7 +80,7 @@ export function Inbox({ packets, onRefresh }: Props) {
       setSuccess(`Reclaim submitted: ${result.txHash.slice(0, 14)}…${result.txHash.slice(-8)}`);
       onRefresh();
     } catch (e) {
-      setError(String(e).replace(/^Error:\s*/, ''));
+      setError(friendlyError(e, 'reclaim'));
     } finally {
       setReclaimingId(null);
     }
@@ -118,19 +120,21 @@ export function Inbox({ packets, onRefresh }: Props) {
 
       {(error || success) && (
         <div style={{ padding: '12px 20px 0' }}>
-          <div
-            style={{
-              padding: '12px 14px',
-              borderRadius: 12,
-              background: success ? 'rgba(74,138,92,.12)' : 'rgba(126,20,24,.08)',
-              border: `1px solid ${success ? 'rgba(74,138,92,.24)' : 'rgba(126,20,24,.16)'}`,
-              color: success ? 'var(--ok)' : 'var(--danger)',
-              fontSize: 12,
-              lineHeight: 1.5,
-            }}
-          >
-            {success || error}
-          </div>
+          {success ? (
+            <Alert
+              tone="success"
+              message={success}
+              onDismiss={() => setSuccess(null)}
+            />
+          ) : error ? (
+            <Alert
+              tone="error"
+              title={error.title}
+              message={error.message}
+              hint={error.hint}
+              onDismiss={() => setError(null)}
+            />
+          ) : null}
         </div>
       )}
 

@@ -11,7 +11,10 @@ import { Activity } from './screens/Activity';
 import { Profile } from './screens/Profile';
 import { AppShell } from './components/layout/AppShell';
 import { Button } from './components/ui/Button';
+import { Alert } from './components/ui/Alert';
 import { useWallet } from './hooks/useWallet';
+import { useNotifications } from './hooks/useNotifications';
+import { friendlyError } from './errors';
 import {
   fetchClaimedPackets,
   fetchCkbPrice,
@@ -110,16 +113,24 @@ export function App() {
     }
     // Backend indexes packets by the lock script hash (`owner_lock_hash`),
     // not the human-readable wallet address.
-    Promise.allSettled([fetchPackets(lockHash), fetchClaimedPackets(lockHash)]).then(results => {
-      if (cancelled) return;
-      const [sent, claimed] = results;
-      setSentPackets(sent.status === 'fulfilled' ? sent.value : []);
-      setClaimedPackets(claimed.status === 'fulfilled' ? claimed.value : []);
-    });
+    const load = () => {
+      Promise.allSettled([fetchPackets(lockHash), fetchClaimedPackets(lockHash)]).then(results => {
+        if (cancelled) return;
+        const [sent, claimed] = results;
+        setSentPackets(sent.status === 'fulfilled' ? sent.value : []);
+        setClaimedPackets(claimed.status === 'fulfilled' ? claimed.value : []);
+      });
+    };
+    load();
+    // Background poll so notifications fire when state changes off-screen.
+    const id = window.setInterval(load, 30_000);
     return () => {
       cancelled = true;
+      window.clearInterval(id);
     };
   }, [lockHash, route, refreshNonce]);
+
+  useNotifications({ sentPackets, claimedPackets, enabled: !!lockHash });
 
   useEffect(() => {
     let cancelled = false;
@@ -149,7 +160,7 @@ export function App() {
           setProfileError(null);
           return;
         }
-        setProfileError(msg.replace(/^Error:\s*/, ''));
+        setProfileError(friendlyError(err, 'profile').message);
       },
     );
 
@@ -197,7 +208,7 @@ export function App() {
       setProfilePromptOpen(false);
       setRefreshNonce(v => v + 1);
     } catch (e) {
-      setProfileError(String(e).replace(/^Error:\s*/, ''));
+      setProfileError(friendlyError(e, 'profile').message);
     } finally {
       setProfileSaving(false);
     }
@@ -352,7 +363,14 @@ export function App() {
             <div style={{ fontSize: 11, color: 'var(--fg-quiet)', fontFamily: 'var(--font-mono)' }}>
               {wallet.address}
             </div>
-            {profileError && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{profileError}</div>}
+            {profileError && (
+              <Alert
+                tone="error"
+                title="Could not save profile"
+                message={profileError}
+                onDismiss={() => setProfileError(null)}
+              />
+            )}
             <div style={{ display: 'flex', gap: 10 }}>
               {senderProfile && (
                 <Button variant="ghost" size="lg" full onClick={() => setProfilePromptOpen(false)}>

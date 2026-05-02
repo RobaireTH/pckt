@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Icon } from '../components/ui/Icon';
 import { IconBtn } from '../components/ui/IconBtn';
+import { Alert } from '../components/ui/Alert';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
+import { friendlyError, type FriendlyError } from '../errors';
 import { formatDateTime } from '../locale';
 import {
   SAFE_SLOT_PAYOUT_SHANNONS,
@@ -26,7 +28,7 @@ type Props = {
 export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
   const { wallet, signer, lockHash, openConnect, balance } = useWallet();
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FriendlyError | null>(null);
   const { type, amount, slots, message, unlock } = draft;
   const numAmount = Number(amount) || 0;
   const amountShannons = amount ? BigInt(amount) * SHANNONS : 0n;
@@ -99,7 +101,7 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
 
   const sealNow = async () => {
     if (validationMessage) {
-      setError(validationMessage);
+      setError({ title: 'Cannot seal yet', message: validationMessage });
       return;
     }
     if (!wallet || !signer || !lockHash) {
@@ -112,7 +114,7 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
       const result = await buildAndRelaySealTx({ draft, signer, ownerLockHash: lockHash });
       onSeal(result);
     } catch (e) {
-      setError(String(e));
+      setError(friendlyError(e, 'seal'));
     } finally {
       setSubmitting(false);
     }
@@ -277,7 +279,17 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
             >
               {sealLabel}
             </Button>
-            {error && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--crimson-600)' }}>{error}</div>}
+            {error && (
+              <div style={{ marginTop: 12 }}>
+                <Alert
+                  tone="error"
+                  title={error.title}
+                  message={error.message}
+                  hint={error.hint}
+                  onDismiss={() => setError(null)}
+                />
+              </div>
+            )}
             <div
               style={{
                 textAlign: 'center',

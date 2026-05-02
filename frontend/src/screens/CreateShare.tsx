@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Icon } from '../components/ui/Icon';
+import { Toast } from '../components/ui/Toast';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
 import { explorerTxUrl } from '../packets';
+import type { AlertTone } from '../components/ui/Alert';
 import type { Draft } from './CreateAmount';
 
 type Props = {
@@ -21,25 +23,60 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
   const [fullLink] = useState(claimLink);
   const [displayLink] = useState(claimLink.replace(/^https?:\/\//, ''));
   const [copied, setCopied] = useState(false);
+  const [toast, setToast] = useState<{ tone: AlertTone; message: string } | null>(null);
   const sealExplorerUrl = explorerTxUrl(txHash);
+  const senderLabel = wallet?.shortAddress ?? 'a friend';
 
-  const copy = () => {
-    navigator.clipboard?.writeText(fullLink).then(
-      () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1400);
-      },
-      () => {},
-    );
+  const buildShareText = () => {
+    const lines = [
+      message ? `"${message}"` : null,
+      `${senderLabel} sent you a pckt of ${amount} CKB.`,
+      slots > 1 ? `First ${slots} claims get a slice.` : null,
+      'Open it here:',
+    ].filter(Boolean) as string[];
+    return lines.join('\n');
+  };
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(fullLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+      setToast({ tone: 'success', message: 'Claim link copied to clipboard.' });
+    } catch {
+      setToast({
+        tone: 'error',
+        message: 'Could not copy to clipboard. Long-press the link to copy manually.',
+      });
+    }
   };
 
   const share = async () => {
-    if (navigator.share) {
+    const text = buildShareText();
+    const payload: ShareData = { title: 'A pckt for you', text, url: fullLink };
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
-        await navigator.share({ title: 'A pckt for you', text: message, url: fullLink });
-      } catch {}
-    } else {
-      copy();
+        await navigator.share(payload);
+        setToast({ tone: 'success', message: 'Shared.' });
+        return;
+      } catch (err) {
+        // AbortError = user dismissed the share sheet; treat as a no-op.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setToast({
+          tone: 'warning',
+          message: 'Share failed — copied the link instead.',
+        });
+        // fall through to clipboard fallback
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}\n${fullLink}`);
+      setToast({ tone: 'success', message: 'Share message copied to clipboard.' });
+    } catch {
+      setToast({
+        tone: 'error',
+        message: 'Could not share or copy. Long-press the link to copy it manually.',
+      });
     }
   };
 
@@ -204,6 +241,13 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
       >
         Leaving this screen hides the secure claim link for now.
       </div>
+      {toast && (
+        <Toast
+          tone={toast.tone}
+          message={toast.message}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }
