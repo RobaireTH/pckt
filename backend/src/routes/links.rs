@@ -45,7 +45,9 @@ pub async fn create(
         .host_str()
         .ok_or(ApiError::BadRequest("full_url is missing a host".into()))?;
     if !host_is_allowed(host, &state.config.shortlink_allowed_hosts) {
-        return Err(ApiError::BadRequest("host is not allowed for shortlinks".into()));
+        return Err(ApiError::BadRequest(
+            "host is not allowed for shortlinks".into(),
+        ));
     }
 
     let now = unix_now();

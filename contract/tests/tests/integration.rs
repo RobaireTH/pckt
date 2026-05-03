@@ -687,7 +687,10 @@ fn rejects_claim_with_non_empty_recipient_data() {
         .verify_tx(&tx, MAX_CYCLES)
         .expect_err("claim with non-empty recipient data must fail");
     let msg = format!("{err}");
-    assert!(msg.contains("75") || msg.contains("RecipientHasData"), "unexpected error: {msg}");
+    assert!(
+        msg.contains("75") || msg.contains("RecipientHasData"),
+        "unexpected error: {msg}"
+    );
 }
 
 #[test]

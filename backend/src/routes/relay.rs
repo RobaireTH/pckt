@@ -50,7 +50,9 @@ fn classify_relay_error(msg: &str) -> ApiError {
         return ApiError::Conflict("This packet cannot be reclaimed until it expires.".into());
     }
     if msg.contains("error code 82") {
-        return ApiError::Conflict("This packet still has an active successor and cannot be reclaimed.".into());
+        return ApiError::Conflict(
+            "This packet still has an active successor and cannot be reclaimed.".into(),
+        );
     }
     if msg.contains("InsufficientCellCapacity") {
         return ApiError::BadRequest(

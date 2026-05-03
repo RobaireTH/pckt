@@ -57,7 +57,10 @@ fn is_valid_username(s: &str) -> bool {
     if !(2..=24).contains(&len) {
         return false;
     }
-    if !s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.' || b == b'-') {
+    if !s
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.' || b == b'-')
+    {
         return false;
     }
     if s.starts_with('.') || s.ends_with('.') || s.contains("..") {
@@ -78,7 +81,9 @@ pub async fn upsert(
     let username = body.username.trim();
 
     if !is_valid_lock_hash(owner_lock_hash) {
-        return Err(ApiError::BadRequest("owner_lock_hash must be 32-byte hex".into()));
+        return Err(ApiError::BadRequest(
+            "owner_lock_hash must be 32-byte hex".into(),
+        ));
     }
     if !is_valid_address(sender_address) {
         return Err(ApiError::BadRequest("sender_address is invalid".into()));

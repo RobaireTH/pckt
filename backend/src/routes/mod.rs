@@ -3,8 +3,8 @@ mod healthz;
 mod links;
 mod messages;
 mod packets;
-mod profiles;
 mod prices;
+mod profiles;
 mod relay;
 
 use axum::{

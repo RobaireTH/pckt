@@ -75,7 +75,10 @@ impl Config {
 }
 
 fn parse_bool(value: &str) -> bool {
-    matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
 }
 
 fn env_var(key: &str) -> Result<String> {

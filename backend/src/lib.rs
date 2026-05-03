@@ -61,9 +61,12 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         .await
         .with_context(|| format!("bind {addr}"))?;
     info!(%addr, "pckt-backend listening");
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
     indexer_handle.abort();
     sweeper_handle.abort();
     info!("pckt-backend shutdown complete");

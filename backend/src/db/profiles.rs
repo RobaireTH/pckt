@@ -8,7 +8,10 @@ pub struct SenderProfile {
     pub username: String,
 }
 
-pub async fn get(pool: &SqlitePool, owner_lock_hash: &str) -> anyhow::Result<Option<SenderProfile>> {
+pub async fn get(
+    pool: &SqlitePool,
+    owner_lock_hash: &str,
+) -> anyhow::Result<Option<SenderProfile>> {
     let row: Option<(String, String, String)> = sqlx::query_as(
         "SELECT owner_lock_hash, sender_address, username
          FROM sender_profiles
@@ -19,11 +22,13 @@ pub async fn get(pool: &SqlitePool, owner_lock_hash: &str) -> anyhow::Result<Opt
     .await
     .context("get sender profile")?;
 
-    Ok(row.map(|(owner_lock_hash, sender_address, username)| SenderProfile {
-        owner_lock_hash,
-        sender_address,
-        username,
-    }))
+    Ok(row.map(
+        |(owner_lock_hash, sender_address, username)| SenderProfile {
+            owner_lock_hash,
+            sender_address,
+            username,
+        },
+    ))
 }
 
 pub async fn upsert(
