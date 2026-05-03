@@ -143,7 +143,8 @@ export function Profile({
   };
   const openHelp = () => {
     const subject = encodeURIComponent('pckt feedback');
-    const body = encodeURIComponent(`Share what happened:\n\nPage: ${window.location.href}\n\n`);
+    const safePage = window.location.href.split('#')[0];
+    const body = encodeURIComponent(`Share what happened:\n\nPage: ${safePage}\n\n`);
     window.open(`mailto:robaireth@gmail.com?subject=${subject}&body=${body}`, '_blank');
     setActionNotice('Opening your email app for feedback.');
   };
