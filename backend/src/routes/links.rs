@@ -114,17 +114,11 @@ fn unix_now() -> i64 {
 }
 
 fn generate_slug() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0);
-    let mut seed = nanos ^ 0x9E37_79B9_7F4A_7C15;
+    let mut bytes = [0u8; SLUG_LEN];
+    getrandom::getrandom(&mut bytes).expect("getrandom failed");
     let mut out = String::with_capacity(SLUG_LEN);
-    for _ in 0..SLUG_LEN {
-        seed = seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        let idx = (seed >> 33) as usize % SLUG_ALPHABET.len();
+    for b in bytes {
+        let idx = (b as usize) % SLUG_ALPHABET.len();
         out.push(SLUG_ALPHABET[idx] as char);
     }
     out

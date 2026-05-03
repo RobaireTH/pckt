@@ -1152,6 +1152,7 @@ dependencies = [
  "ckb-hash",
  "dotenvy",
  "futures",
+ "getrandom 0.2.17",
  "http-body-util",
  "hyper",
  "pckt-types",

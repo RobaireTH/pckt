@@ -31,6 +31,7 @@ thiserror = { workspace = true }
 dotenvy = "0.15"
 ckb-hash = "0.200"
 url = "2"
+getrandom = "0.2"
 pckt-types = { path = "../shared/pckt-types" }
 
 [dev-dependencies]
