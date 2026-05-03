@@ -20,6 +20,7 @@ pub fn router(state: &AppState) -> Router<AppState> {
         .route("/v1/links", post(links::create))
         .route("/v1/relay/tx", post(relay::submit))
         .route("/v1/messages", post(messages::store))
+        .route("/v1/profiles", post(profiles::upsert))
         .layer(middleware::from_fn_with_state(
             state.rate_limit.clone(),
             rate_limit::middleware,
@@ -38,5 +39,4 @@ pub fn router(state: &AppState) -> Router<AppState> {
         .route("/v1/prices/ckb", get(prices::ckb))
         .route("/v1/events/stream", get(events::stream))
         .merge(limited)
-        .route("/v1/profiles", post(profiles::upsert))
 }

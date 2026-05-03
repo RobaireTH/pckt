@@ -97,8 +97,14 @@ export function ownerLabel(
   fallback = 'unknown',
   ownerAddress?: string | null,
   ownerName?: string | null,
+  viewerLockHash?: string | null,
 ) {
-  if (ownerName) return ownerName;
+  const ownsThis =
+    !!ownerName &&
+    !!ownerLockHash &&
+    !!viewerLockHash &&
+    ownerLockHash.toLowerCase() === viewerLockHash.toLowerCase();
+  if (ownsThis) return ownerName!;
   if (ownerAddress) {
     return ownerAddress.length > 14
       ? `${ownerAddress.slice(0, 8)}…${ownerAddress.slice(-6)}`

@@ -60,13 +60,11 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
         setToast({ tone: 'success', message: 'Shared.' });
         return;
       } catch (err) {
-        // AbortError = user dismissed the share sheet; treat as a no-op.
         if (err instanceof DOMException && err.name === 'AbortError') return;
         setToast({
           tone: 'warning',
           message: 'Share failed — copied the link instead.',
         });
-        // fall through to clipboard fallback
       }
     }
     try {

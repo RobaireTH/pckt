@@ -39,6 +39,36 @@ pub async fn get_one(
     }))
 }
 
+fn is_valid_lock_hash(s: &str) -> bool {
+    let body = s.strip_prefix("0x").unwrap_or(s);
+    body.len() == 64 && body.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn is_valid_address(s: &str) -> bool {
+    let len = s.len();
+    if !(10..=200).contains(&len) {
+        return false;
+    }
+    s.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
+fn is_valid_username(s: &str) -> bool {
+    let len = s.len();
+    if !(2..=24).contains(&len) {
+        return false;
+    }
+    if !s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.' || b == b'-') {
+        return false;
+    }
+    if s.starts_with('.') || s.ends_with('.') || s.contains("..") {
+        return false;
+    }
+    if s.starts_with('-') || s.ends_with('-') {
+        return false;
+    }
+    true
+}
+
 pub async fn upsert(
     State(state): State<AppState>,
     Json(body): Json<UpsertProfileBody>,
@@ -47,11 +77,16 @@ pub async fn upsert(
     let sender_address = body.sender_address.trim();
     let username = body.username.trim();
 
-    if owner_lock_hash.is_empty() || sender_address.is_empty() {
-        return Err(ApiError::BadRequest("owner_lock_hash and sender_address are required".into()));
+    if !is_valid_lock_hash(owner_lock_hash) {
+        return Err(ApiError::BadRequest("owner_lock_hash must be 32-byte hex".into()));
     }
-    if username.len() < 2 || username.len() > 24 {
-        return Err(ApiError::BadRequest("username must be between 2 and 24 characters".into()));
+    if !is_valid_address(sender_address) {
+        return Err(ApiError::BadRequest("sender_address is invalid".into()));
+    }
+    if !is_valid_username(username) {
+        return Err(ApiError::BadRequest(
+            "username must be 2-24 chars of [A-Za-z0-9_.-], no leading/trailing/double dots or leading/trailing hyphens".into(),
+        ));
     }
 
     let now = std::time::SystemTime::now()

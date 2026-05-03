@@ -112,8 +112,6 @@ export function App() {
       setClaimedPackets([]);
       return;
     }
-    // Backend indexes packets by the lock script hash (`owner_lock_hash`),
-    // not the human-readable wallet address.
     const load = () => {
       Promise.allSettled([fetchPackets(lockHash), fetchClaimedPackets(lockHash)]).then(results => {
         if (cancelled) return;
@@ -123,7 +121,6 @@ export function App() {
       });
     };
     load();
-    // Background poll so notifications fire when state changes off-screen.
     const id = window.setInterval(load, 30_000);
     return () => {
       cancelled = true;

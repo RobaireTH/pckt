@@ -26,7 +26,7 @@ export function Claim({ onOpen, outPoint }: Props) {
   const [claiming, setClaiming] = useState(false);
   const [payout, setPayout] = useState<bigint | null>(null);
   const [claimTxHash, setClaimTxHash] = useState<string | null>(null);
-  const { signer, wallet, lockScript, openConnect } = useWallet();
+  const { signer, wallet, lockScript, lockHash, openConnect } = useWallet();
 
   const h = window.location.hash.replace(/^#\/?/, '');
   const pathOnly = h.split('?')[0];
@@ -67,7 +67,7 @@ export function Claim({ onOpen, outPoint }: Props) {
     };
   }, [outPoint, claimPubkey]);
 
-  const from = packet ? ownerLabel(packet.owner_lock_hash, 'unknown', packet.owner_address, packet.owner_name) : 'unknown';
+  const from = packet ? ownerLabel(packet.owner_lock_hash, 'unknown', packet.owner_address, packet.owner_name, lockHash) : 'unknown';
   const message = packet?.message_body || 'A packet for you';
   const remaining = packet ? Math.max(0, packet.slots_total - packet.slots_claimed) : 0;
   const totalCkb = packet ? Math.floor(Number(packet.current_capacity) / 100000000) : 0;

@@ -33,7 +33,7 @@ export function Inbox({ packets, onRefresh }: Props) {
   const [reclaimingId, setReclaimingId] = useState<string | null>(null);
   const [error, setError] = useState<FriendlyError | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const { wallet, signer, openConnect } = useWallet();
+  const { wallet, signer, lockHash, openConnect } = useWallet();
   const now = Math.floor(Date.now() / 1000);
   const items: InboxItem[] = packets.map(p => {
     const open = p.slots_claimed < p.slots_total && p.unlock_time <= now && p.expiry > now;
@@ -44,7 +44,7 @@ export function Inbox({ packets, onRefresh }: Props) {
     const info = packetTypeInfo(p.packet_type);
     return {
       id: p.out_point,
-      from: ownerLabel(p.owner_lock_hash, 'sender', p.owner_address, p.owner_name),
+      from: ownerLabel(p.owner_lock_hash, 'sender', p.owner_address, p.owner_name, lockHash),
       message: p.message_body || 'A packet for you',
       status,
       variant: status === 'claimed' ? 'foil' : info.variant,

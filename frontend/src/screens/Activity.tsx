@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Chip } from '../components/ui/Chip';
 import type { ClaimedPacket, PacketSummary } from '../api';
+import { useWallet } from '../hooks/useWallet';
 import { formatDate } from '../locale';
 import { ownerLabel, packetSealedAtMs, packetTypeInfo } from '../packets';
 
@@ -36,6 +37,7 @@ export function Activity({
   claimedPackets: ClaimedPacket[];
 }) {
   const [filter, setFilter] = useState<Filter>('all');
+  const { lockHash } = useWallet();
   const nowMs = Date.now();
   const rows: LedgerRow[] = [
     ...sentPackets.map(p => {
@@ -60,7 +62,7 @@ export function Activity({
         direction: 'in' as const,
         kind,
         title: p.message_body || packetTypeInfo(p.packet_type).label,
-        meta: `${kind} · from ${ownerLabel(p.owner_lock_hash, 'sender', p.owner_address, p.owner_name)}`,
+        meta: `${kind} · from ${ownerLabel(p.owner_lock_hash, 'sender', p.owner_address, p.owner_name, lockHash)}`,
         amount: `+${slotCkb.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
         at: formatDate(p.claim_ts),
         group: ageGroup(ageDays),

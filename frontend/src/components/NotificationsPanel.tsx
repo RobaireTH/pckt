@@ -51,7 +51,6 @@ export function NotificationsPanel({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  // Mark everything as read once the panel is opened — matches the iOS/Android pattern.
   useEffect(() => {
     if (open) {
       const t = window.setTimeout(onMarkAllRead, 600);
