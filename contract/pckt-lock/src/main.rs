@@ -61,6 +61,7 @@ enum Error {
     UnexpectedSuccessor = 72,
     SuccessorMismatch = 73,
     SuccessorBadData = 74,
+    RecipientHasData = 75,
     ReclaimBeforeExpiry = 80,
     OwnerInputMissing = 81,
     ReclaimWithSuccessor = 82,
@@ -115,6 +116,10 @@ fn verify_recipient(claim: &Claim, payout: u64) -> Result<(), Error> {
             load_cell_type(idx, Source::Output).map_err(|_| Error::CapacityLoadFailed)?;
         if type_opt.is_some() {
             continue;
+        }
+        let data = load_cell_data(idx, Source::Output).map_err(|_| Error::CapacityLoadFailed)?;
+        if !data.is_empty() {
+            return Err(Error::RecipientHasData);
         }
         return Ok(());
     }
