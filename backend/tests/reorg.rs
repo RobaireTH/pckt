@@ -29,9 +29,11 @@ async fn make_state() -> AppState {
             out_point_tx: "0x00".into(),
             out_point_index: 0,
         },
+        shortlink_allowed_hosts: vec!["example.test".into()],
         allowed_origins: vec!["*".into()],
         rate_limit_rps: 1000.0,
         rate_limit_burst: 1000.0,
+        trust_forwarded_for: false,
     };
     AppState::new(pool, config)
 }

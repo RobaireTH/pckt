@@ -35,9 +35,11 @@ async fn build_state() -> AppState {
             out_point_tx: "0x00".into(),
             out_point_index: 0,
         },
+        shortlink_allowed_hosts: vec!["example.test".into()],
         allowed_origins: vec!["*".into()],
         rate_limit_rps: 1000.0,
         rate_limit_burst: 1000.0,
+        trust_forwarded_for: false,
     };
     AppState::new(pool, config)
 }
@@ -63,9 +65,11 @@ async fn build_state_with_limit(rps: f64, burst: f64) -> AppState {
             out_point_tx: "0x00".into(),
             out_point_index: 0,
         },
+        shortlink_allowed_hosts: vec!["example.test".into()],
         allowed_origins: vec!["*".into()],
         rate_limit_rps: rps,
         rate_limit_burst: burst,
+        trust_forwarded_for: false,
     };
     AppState::new(pool, config)
 }
@@ -125,7 +129,7 @@ async fn sender_profile_store_and_fetch() {
                 .uri("/v1/profiles")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"owner_lock_hash":"0xowner","sender_address":"ckt1qexample","username":"shen.bit"}"#,
+                    r#"{"owner_lock_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","sender_address":"ckt1qexample0001","username":"shen.bit"}"#,
                 ))
                 .unwrap(),
         )
@@ -136,7 +140,7 @@ async fn sender_profile_store_and_fetch() {
     let fetch = app
         .oneshot(
             Request::builder()
-                .uri("/v1/profiles/0xowner")
+                .uri("/v1/profiles/0x0000000000000000000000000000000000000000000000000000000000000001")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -268,7 +272,7 @@ async fn shortlink_create_and_redirect() {
                 .method("POST")
                 .uri("/v1/links")
                 .header("content-type", "application/json")
-                .body(Body::from(r#"{"full_url":"https://example.com"}"#))
+                .body(Body::from(r#"{"full_url":"https://example.test/path"}"#))
                 .unwrap(),
         )
         .await
@@ -291,7 +295,7 @@ async fn shortlink_create_and_redirect() {
     assert_eq!(redirect.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         redirect.headers().get("location").unwrap(),
-        "https://example.com"
+        "https://example.test/path"
     );
 }
 
@@ -472,7 +476,7 @@ async fn rate_limit_returns_429_after_burst() {
             .uri("/v1/links")
             .header("content-type", "application/json")
             .header("x-forwarded-for", "192.0.2.1")
-            .body(Body::from(r#"{"full_url":"https://example.com"}"#))
+            .body(Body::from(r#"{"full_url":"https://example.test/x"}"#))
             .unwrap()
     };
 

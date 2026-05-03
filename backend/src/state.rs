@@ -15,7 +15,11 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(db: SqlitePool, config: Config) -> Self {
-        let rate_limit = RateLimit::new(config.rate_limit_rps, config.rate_limit_burst);
+        let rate_limit = RateLimit::new(
+            config.rate_limit_rps,
+            config.rate_limit_burst,
+            config.trust_forwarded_for,
+        );
         Self {
             db,
             config: Arc::new(config),

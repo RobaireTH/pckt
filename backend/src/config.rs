@@ -15,6 +15,7 @@ pub struct Config {
     pub allowed_origins: Vec<String>,
     pub rate_limit_rps: f64,
     pub rate_limit_burst: f64,
+    pub trust_forwarded_for: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -68,8 +69,13 @@ impl Config {
             rate_limit_burst: env_or("RATE_LIMIT_BURST", "10")
                 .parse()
                 .context("RATE_LIMIT_BURST")?,
+            trust_forwarded_for: parse_bool(&env_or("TRUST_FORWARDED_FOR", "false")),
         })
     }
+}
+
+fn parse_bool(value: &str) -> bool {
+    matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
 }
 
 fn env_var(key: &str) -> Result<String> {
