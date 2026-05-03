@@ -10,6 +10,7 @@ pub struct Config {
     pub port: u16,
     pub price_feed_url: String,
     pub shortlink_base: String,
+    pub shortlink_allowed_hosts: Vec<String>,
     pub packet_lock: PacketLock,
     pub allowed_origins: Vec<String>,
     pub rate_limit_rps: f64,
@@ -34,6 +35,11 @@ pub struct PacketLock {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
+        let shortlink_base = env_var("SHORTLINK_BASE")?;
+        let shortlink_allowed_hosts = parse_allowed_hosts(
+            env_or("SHORTLINK_ALLOWED_HOSTS", "").as_str(),
+            &shortlink_base,
+        );
         Ok(Self {
             network: parse_network(&env_var("CKB_NETWORK")?)?,
             ckb_rpc_url: env_var("CKB_RPC_URL")?,
@@ -41,7 +47,8 @@ impl Config {
             database_url: env_var("DATABASE_URL")?,
             port: env_or("PORT", "8080").parse().context("PORT")?,
             price_feed_url: env_var("PRICE_FEED_URL")?,
-            shortlink_base: env_var("SHORTLINK_BASE")?,
+            shortlink_base,
+            shortlink_allowed_hosts,
             packet_lock: PacketLock {
                 code_hash: env_var("PACKET_LOCK_CODE_HASH")?,
                 hash_type: env_var("PACKET_LOCK_HASH_TYPE")?,
@@ -80,6 +87,35 @@ fn parse_network(value: &str) -> Result<Network> {
         "mainnet" => Ok(Network::Mainnet),
         other => anyhow::bail!("unknown CKB_NETWORK: {other}"),
     }
+}
+
+fn parse_allowed_hosts(env_value: &str, shortlink_base: &str) -> Vec<String> {
+    let mut hosts: Vec<String> = env_value
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_ascii_lowercase())
+        .collect();
+    if let Some(host) = url::Url::parse(shortlink_base)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+    {
+        if !hosts.iter().any(|h| h == &host) {
+            hosts.push(host);
+        }
+    }
+    hosts
+}
+
+pub fn host_is_allowed(host: &str, allowed: &[String]) -> bool {
+    let host = host.to_ascii_lowercase();
+    allowed.iter().any(|pat| {
+        if let Some(suffix) = pat.strip_prefix("*.") {
+            host == suffix || host.ends_with(&format!(".{suffix}"))
+        } else {
+            pat == &host
+        }
+    })
 }
 
 fn parse_u32_maybe_hex(value: &str) -> Result<u32> {

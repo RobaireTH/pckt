@@ -8,6 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    config::host_is_allowed,
     error::{ApiError, ApiResult},
     state::AppState,
 };
@@ -31,8 +32,20 @@ pub async fn create(
     State(state): State<AppState>,
     Json(body): Json<CreateLink>,
 ) -> ApiResult<Json<CreatedLink>> {
-    if !(body.full_url.starts_with("http://") || body.full_url.starts_with("https://")) {
+    if body.full_url.len() > 2048 {
+        return Err(ApiError::BadRequest("full_url too long".into()));
+    }
+    let parsed = url::Url::parse(&body.full_url)
+        .map_err(|_| ApiError::BadRequest("full_url must be a valid http(s) URL".into()))?;
+    let scheme = parsed.scheme();
+    if scheme != "http" && scheme != "https" {
         return Err(ApiError::BadRequest("full_url must be http(s)".into()));
+    }
+    let host = parsed
+        .host_str()
+        .ok_or(ApiError::BadRequest("full_url is missing a host".into()))?;
+    if !host_is_allowed(host, &state.config.shortlink_allowed_hosts) {
+        return Err(ApiError::BadRequest("host is not allowed for shortlinks".into()));
     }
 
     let now = unix_now();
