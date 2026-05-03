@@ -36,8 +36,6 @@ const options: Option[] = [
     sub: 'Random amounts — first come, first served.',
     icon: 'shuffle',
     flavor: 'The classic red-packet ritual',
-    disabled: true,
-    note: 'Temporarily unavailable on the current testnet contract.',
   },
   {
     id: 'timed',
@@ -249,19 +247,6 @@ export function CreateType({ selected, onSelect, onBack, onClose, onContinue }: 
               </button>
             );
           })}
-        </div>
-
-        <div
-          style={{
-            marginTop: 18,
-            fontSize: 12,
-            color: 'var(--fg-muted)',
-            lineHeight: 1.5,
-            maxWidth: 620,
-          }}
-        >
-          Lucky split is disabled on the current testnet deployment because the live contract can
-          produce sub-minimum claim amounts that fail on-chain. Use Fixed or Timed for now.
         </div>
 
         <div style={{ marginTop: 32, display: 'flex', justifyContent: 'flex-end' }}>

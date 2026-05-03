@@ -69,11 +69,8 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
   const minFixedTotalCkb = toCkb(minimumFixedPacketAmount(slots));
   const walletBalanceCkb = balance ? toCkb(balance) : null;
   const L = labels[type];
-  const luckyUnavailable = type === 'lucky';
-  const fixedTooSmall = type !== 'lucky' && amountShannons > 0n && amountShannons < minimumFixedPacketAmount(slots);
-  const validationMessage = luckyUnavailable
-    ? 'Lucky split is temporarily unavailable on the current testnet contract because it can create unclaimable dust payouts.'
-    : fixedTooSmall
+  const fixedTooSmall = amountShannons > 0n && amountShannons < minimumFixedPacketAmount(slots);
+  const validationMessage = fixedTooSmall
     ? `This packet needs at least ${minFixedTotalCkb.toLocaleString(undefined, {
         maximumFractionDigits: 2,
       })} CKB total so each claim is at least ${minPerSlotCkb.toLocaleString(undefined, {

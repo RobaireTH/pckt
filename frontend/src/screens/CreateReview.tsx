@@ -39,12 +39,9 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
   const minPerSlotCkb = toCkb(SAFE_SLOT_PAYOUT_SHANNONS);
   const minFixedTotalCkb = toCkb(minimumFixedPacketAmount(slots));
   const walletBalanceCkb = balance ? toCkb(balance) : null;
-  const luckyUnavailable = type === 'lucky';
   const fixedTooSmall =
-    type !== 'lucky' && amountShannons > 0n && amountShannons < minimumFixedPacketAmount(slots);
-  const validationMessage = luckyUnavailable
-    ? 'Lucky split is temporarily unavailable on the current testnet contract because it can create unclaimable dust payouts.'
-    : fixedTooSmall
+    amountShannons > 0n && amountShannons < minimumFixedPacketAmount(slots);
+  const validationMessage = fixedTooSmall
     ? `This packet needs at least ${minFixedTotalCkb.toLocaleString(undefined, {
         maximumFractionDigits: 2,
       })} CKB total so each claim is at least ${minPerSlotCkb.toLocaleString(undefined, {
