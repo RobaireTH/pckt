@@ -318,7 +318,6 @@ export function App() {
           onAnother={startNewDraft}
           onHome={() => go('app')}
           claimLink={lastSeal?.claimLink ?? `${window.location.origin}/#/claim`}
-          publicShortLink={lastSeal?.publicShortLink ?? ''}
           txHash={lastSeal?.txHash ?? 'pending'}
         />
       )}

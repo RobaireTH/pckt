@@ -13,11 +13,10 @@ type Props = {
   onAnother: () => void;
   onHome: () => void;
   claimLink: string;
-  publicShortLink: string;
   txHash: string;
 };
 
-export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLink, txHash }: Props) {
+export function CreateShare({ draft, onAnother, onHome, claimLink, txHash }: Props) {
   const { amount, message, slots } = draft;
   const { wallet } = useWallet();
   const [fullLink] = useState(claimLink);
@@ -110,26 +109,6 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
       >
         Share this link with anyone. The first {slots} claims get a slice of {amount} CKB.
       </p>
-      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--fg-muted)', maxWidth: 440 }}>
-        This secure link includes the claim secret in the URL fragment (client-side only). The backend
-        only receives the public short link.
-      </div>
-      <div
-        style={{
-          marginTop: 8,
-          maxWidth: 440,
-          padding: '12px 14px',
-          background: 'rgba(126,20,24,.08)',
-          border: '1px solid rgba(126,20,24,.16)',
-          borderRadius: 12,
-          fontSize: 12,
-          color: 'var(--fg)',
-          lineHeight: 1.55,
-        }}
-      >
-        For now, this secure share link is only shown once on this screen. Copy or share it before
-        leaving, because you will not be able to reopen it later.
-      </div>
 
       <div className="pckt-share-packet">
         <Packet
@@ -198,11 +177,6 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
         >
           View seal tx on explorer →
         </a>
-        {publicShortLink && (
-          <div style={{ width: '100%', marginTop: 4, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-quiet)' }}>
-            Public short link: {publicShortLink.replace(/^https?:\/\//, '')}
-          </div>
-        )}
       </div>
 
       <div
@@ -226,18 +200,6 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLi
         <Button variant="primary" size="lg" iconRight="arrow_right" onClick={onHome}>
           Back to home
         </Button>
-      </div>
-      <div
-        style={{
-          fontSize: 11,
-          color: 'var(--fg-quiet)',
-          fontFamily: 'var(--font-mono)',
-          letterSpacing: '.04em',
-          textAlign: 'center',
-          maxWidth: 420,
-        }}
-      >
-        Leaving this screen hides the secure claim link for now.
       </div>
       {toast && (
         <Toast
