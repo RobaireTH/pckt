@@ -6,6 +6,7 @@ mod packets;
 mod prices;
 mod profiles;
 mod relay;
+mod secrets;
 
 use axum::{
     middleware,
@@ -21,6 +22,9 @@ pub fn router(state: &AppState) -> Router<AppState> {
         .route("/v1/relay/tx", post(relay::submit))
         .route("/v1/messages", post(messages::store))
         .route("/v1/profiles", post(profiles::upsert))
+        .route("/v1/secrets", post(secrets::store))
+        .route("/v1/secrets/retrieve", post(secrets::retrieve))
+        .route("/v1/secrets/pair", post(secrets::pair))
         .layer(middleware::from_fn_with_state(
             state.rate_limit.clone(),
             rate_limit::middleware,

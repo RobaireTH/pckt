@@ -1,4 +1,9 @@
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
+use anyhow::{anyhow, Context, Result};
+use base64::Engine;
 use ckb_hash::blake2b_256;
+use rand::RngCore;
 
 pub fn blake160(input: &[u8]) -> [u8; 20] {
     let full = blake2b_256(input);
@@ -68,4 +73,40 @@ fn nibble_val(c: u8) -> Option<u8> {
         b'A'..=b'F' => Some(c - b'A' + 10),
         _ => None,
     }
+}
+
+pub fn load_secret_key_from_env(var: &str) -> Result<[u8; 32]> {
+    let raw = std::env::var(var).with_context(|| format!("missing env var: {var}"))?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(raw.trim())
+        .with_context(|| format!("{var} is not valid base64"))?;
+    if bytes.len() != 32 {
+        return Err(anyhow!(
+            "{var} must decode to 32 bytes (got {})",
+            bytes.len()
+        ));
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
+pub fn aead_encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<(Vec<u8>, [u8; 12])> {
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let mut nonce_bytes = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(Nonce::from_slice(&nonce_bytes), plaintext)
+        .map_err(|e| anyhow!("aead encrypt failed: {e}"))?;
+    Ok((ciphertext, nonce_bytes))
+}
+
+pub fn aead_decrypt(key: &[u8; 32], nonce_bytes: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
+    if nonce_bytes.len() != 12 {
+        return Err(anyhow!("nonce must be 12 bytes"));
+    }
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    cipher
+        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
+        .map_err(|e| anyhow!("aead decrypt failed: {e}"))
 }

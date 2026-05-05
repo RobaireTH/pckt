@@ -35,7 +35,7 @@ async fn make_state() -> AppState {
         rate_limit_burst: 1000.0,
         trust_forwarded_for: false,
     };
-    AppState::new(pool, config)
+    AppState::new(pool, config, [0u8; 32])
 }
 
 fn block(number: u64, hash: &str, parent_hash: &str) -> serde_json::Value {

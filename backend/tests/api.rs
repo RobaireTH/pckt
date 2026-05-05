@@ -41,7 +41,7 @@ async fn build_state() -> AppState {
         rate_limit_burst: 1000.0,
         trust_forwarded_for: false,
     };
-    AppState::new(pool, config)
+    AppState::new(pool, config, [0u8; 32])
 }
 
 async fn build_state_with_limit(rps: f64, burst: f64) -> AppState {
@@ -71,7 +71,7 @@ async fn build_state_with_limit(rps: f64, burst: f64) -> AppState {
         rate_limit_burst: burst,
         trust_forwarded_for: false,
     };
-    AppState::new(pool, config)
+    AppState::new(pool, config, [0u8; 32])
 }
 
 async fn build_app() -> Router {
