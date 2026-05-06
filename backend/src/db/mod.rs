@@ -2,7 +2,6 @@ pub mod blocks;
 pub mod cursor;
 pub mod packets;
 pub mod profiles;
-pub mod secrets;
 pub mod shortlinks;
 
 use std::str::FromStr;

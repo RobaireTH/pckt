@@ -27,8 +27,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let pool = db::connect(&config.database_url).await?;
     db::migrate(&pool).await?;
 
-    let secret_key = crypto::load_secret_key_from_env("PCKT_SECRET_KEY")?;
-    let state = AppState::new(pool, config, secret_key);
+    let state = AppState::new(pool, config);
 
     let indexer = Indexer::new(state.clone());
     let indexer_handle = tokio::spawn(async move { indexer.run().await });

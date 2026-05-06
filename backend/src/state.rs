@@ -11,11 +11,10 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub bus: EventBus,
     pub rate_limit: RateLimit,
-    pub secret_key: Arc<[u8; 32]>,
 }
 
 impl AppState {
-    pub fn new(db: SqlitePool, config: Config, secret_key: [u8; 32]) -> Self {
+    pub fn new(db: SqlitePool, config: Config) -> Self {
         let rate_limit = RateLimit::new(
             config.rate_limit_rps,
             config.rate_limit_burst,
@@ -26,7 +25,6 @@ impl AppState {
             config: Arc::new(config),
             bus: EventBus::new(),
             rate_limit,
-            secret_key: Arc::new(secret_key),
         }
     }
 }
