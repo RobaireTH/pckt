@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Icon } from '../components/ui/Icon';
 import { Toast } from '../components/ui/Toast';
+import { CopyPill } from '../components/ui/CopyPill';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
 import { explorerTxUrl } from '../packets';
@@ -22,6 +23,7 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, txHash }: Pro
   const [fullLink] = useState(claimLink);
   const [displayLink] = useState(claimLink.replace(/^https?:\/\//, ''));
   const [copied, setCopied] = useState(false);
+  const [pill, setPill] = useState<string | null>(null);
   const [toast, setToast] = useState<{ tone: AlertTone; message: string } | null>(null);
   const sealExplorerUrl = explorerTxUrl(txHash);
   const senderLabel = wallet?.shortAddress ?? 'a friend';
@@ -41,7 +43,7 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, txHash }: Pro
       await navigator.clipboard.writeText(fullLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 1400);
-      setToast({ tone: 'success', message: 'Claim link copied to clipboard.' });
+      setPill('Link copied');
     } catch {
       setToast({
         tone: 'error',
@@ -56,7 +58,6 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, txHash }: Pro
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         await navigator.share(payload);
-        setToast({ tone: 'success', message: 'Shared.' });
         return;
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -68,7 +69,7 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, txHash }: Pro
     }
     try {
       await navigator.clipboard.writeText(`${text}\n${fullLink}`);
-      setToast({ tone: 'success', message: 'Share message copied to clipboard.' });
+      setPill('Share message copied');
     } catch {
       setToast({
         tone: 'error',
@@ -208,6 +209,7 @@ export function CreateShare({ draft, onAnother, onHome, claimLink, txHash }: Pro
           onClose={() => setToast(null)}
         />
       )}
+      {pill && <CopyPill message={pill} onClose={() => setPill(null)} />}
     </div>
   );
 }

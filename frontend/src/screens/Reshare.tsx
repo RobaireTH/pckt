@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Alert } from '../components/ui/Alert';
 import { Toast } from '../components/ui/Toast';
+import { CopyPill } from '../components/ui/CopyPill';
 import { Packet } from '../components/Packet';
 import {
   fetchPacket,
@@ -25,6 +26,7 @@ export function Reshare({ outPoint, onBack }: Props) {
   const [pairCode, setPairCode] = useState('');
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState<{ tone: AlertTone; message: string } | null>(null);
+  const [pill, setPill] = useState<string | null>(null);
   const { lockHash } = useWallet();
 
   const load = () => {
@@ -81,7 +83,7 @@ export function Reshare({ outPoint, onBack }: Props) {
       await navigator.clipboard.writeText(value);
       setCopied(true);
       setTimeout(() => setCopied(false), 1400);
-      setToast({ tone: 'success', message: 'Copied to clipboard.' });
+      setPill('Link copied');
     } catch {
       setToast({ tone: 'error', message: 'Could not copy. Long-press to copy manually.' });
     }
@@ -254,6 +256,7 @@ export function Reshare({ outPoint, onBack }: Props) {
       {toast && (
         <Toast tone={toast.tone} message={toast.message} onClose={() => setToast(null)} />
       )}
+      {pill && <CopyPill message={pill} onClose={() => setPill(null)} />}
     </div>
   );
 }
