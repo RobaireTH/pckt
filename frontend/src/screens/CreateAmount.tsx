@@ -7,7 +7,7 @@ import { formatDateTime } from '../locale';
 import { SAFE_SLOT_PAYOUT_SHANNONS, minimumFixedPacketAmount, packetFloor, toCkb } from '../packets';
 import { PacketType } from './CreateType';
 
-const amountPresets = ['88', '188', '888', '1888', '8888'];
+const amountPresets = ['14000', '18888', '28888', '58888', '88888'];
 const slotPresets = [5, 10, 20, 50];
 const messagePresets = [
   { label: 'Fold · Seal · Send', full: 'Fold · Seal · Send' },
@@ -203,13 +203,16 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
             <div
               style={{
                 fontSize: 11,
-                color: 'var(--fg-quiet)',
+                color: fixedTooSmall ? 'var(--danger)' : 'var(--fg-quiet)',
+                fontWeight: fixedTooSmall ? 600 : 400,
                 marginTop: 6,
                 fontFamily: 'var(--font-mono)',
               }}
             >
-              Fixed and timed packets should target at least{' '}
-              {minPerSlotCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })} CKB per claim.
+              Min for {slots} recipients:{' '}
+              {minFixedTotalCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })} CKB
+              {' · '}
+              {minPerSlotCkb.toLocaleString(undefined, { maximumFractionDigits: 2 })} CKB per claim
             </div>
             {walletBalanceCkb !== null && (
               <div

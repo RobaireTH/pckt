@@ -83,7 +83,7 @@ function defaultUnlock() {
 function initialDraft(): Draft {
   return {
     type: 'fixed',
-    amount: '888',
+    amount: '18888',
     slots: 20,
     message: 'Fold · Seal · Send',
     unlock: defaultUnlock(),
