@@ -26,13 +26,9 @@ type InboxItem = {
 
 type Filter = 'all' | 'open' | 'past';
 
-type Props = {
-  packets: PacketSummary[];
-  onRefresh: () => void;
-  onReshare?: (outPoint: string) => void;
-};
+type Props = { packets: PacketSummary[]; onRefresh: () => void };
 
-export function Inbox({ packets, onRefresh, onReshare }: Props) {
+export function Inbox({ packets, onRefresh }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
   const [reclaimingId, setReclaimingId] = useState<string | null>(null);
   const [error, setError] = useState<FriendlyError | null>(null);
@@ -145,11 +141,7 @@ export function Inbox({ packets, onRefresh, onReshare }: Props) {
       {openItems.length > 0 && (
         <Section title="Open">
           {openItems.map(item => (
-            <InboxRow
-              key={item.id}
-              item={item}
-              onClick={onReshare ? () => onReshare(item.id) : undefined}
-            />
+            <InboxRow key={item.id} item={item} />
           ))}
         </Section>
       )}

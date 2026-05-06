@@ -12,8 +12,7 @@ import {
   type TransactionLike,
 } from '@ckb-ccc/connector-react';
 import { secp256k1 } from '@noble/curves/secp256k1';
-import { createShortlink, relayTransaction, storePacketSecret } from './api';
-import { getOrCreateDeviceToken } from './deviceToken';
+import { createShortlink, relayTransaction } from './api';
 import { PCKT_LOCK } from './config';
 import {
   decodePacketData,
@@ -147,22 +146,9 @@ export async function buildAndRelaySealTx(params: {
   const signedJson = toRpcTransaction(signed);
   const { tx_hash } = await relayTransaction(signedJson);
 
-  const claimSkHex = hexFrom(claimSk);
-  const claimLink = `${window.location.origin}/#/claim/${encodeURIComponent(claimPubkeyHash)}/${encodeURIComponent(claimSkHex)}`;
+  const claimLink = `${window.location.origin}/#/claim/${encodeURIComponent(claimPubkeyHash)}/${encodeURIComponent(hexFrom(claimSk))}`;
   const publicTarget = `${window.location.origin}/#/claim?pubkey=${encodeURIComponent(claimPubkeyHash)}`;
   const short = await createShortlink(publicTarget, 7 * 24 * 3600);
-
-  const sealOutPoint = `${tx_hash}:0`;
-  const deviceToken = getOrCreateDeviceToken();
-  storePacketSecret({
-    out_point: sealOutPoint,
-    owner_lock_hash: ownerLockHash,
-    claim_sk: claimSkHex,
-    device_token: deviceToken,
-  }).catch(err => {
-    console.warn('store packet secret failed', err);
-  });
-
   return { txHash: tx_hash, claimLink, publicShortLink: short.short_url };
 }
 

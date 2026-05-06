@@ -115,27 +115,3 @@ export function createShortlink(
 export function fetchCkbPrice(): Promise<{ usd: number }> {
   return get('/v1/prices/ckb');
 }
-
-export function storePacketSecret(body: {
-  out_point: string;
-  owner_lock_hash: string;
-  claim_sk: string;
-  device_token: string;
-}): Promise<{ paired: boolean }> {
-  return post('/v1/secrets', body);
-}
-
-export function pairDeviceToken(body: {
-  owner_lock_hash: string;
-  device_token: string;
-  existing_token: string;
-}): Promise<{ paired: boolean }> {
-  return post('/v1/secrets/pair', body);
-}
-
-export function retrievePacketSecret(body: {
-  out_point: string;
-  device_token: string;
-}): Promise<{ claim_sk: string }> {
-  return post('/v1/secrets/retrieve', body);
-}

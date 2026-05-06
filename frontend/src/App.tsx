@@ -6,7 +6,6 @@ import { CreateAmount, Draft } from './screens/CreateAmount';
 import { CreateReview } from './screens/CreateReview';
 import { CreateShare } from './screens/CreateShare';
 import { Claim } from './screens/Claim';
-import { Reshare } from './screens/Reshare';
 import { Inbox } from './screens/Inbox';
 import { Activity } from './screens/Activity';
 import { Profile } from './screens/Profile';
@@ -36,7 +35,6 @@ export type Route =
   | 'create-review'
   | 'create-share'
   | 'claim'
-  | 'reshare'
   | 'inbox'
   | 'activity'
   | 'me';
@@ -49,7 +47,6 @@ const ROUTES: Route[] = [
   'create-review',
   'create-share',
   'claim',
-  'reshare',
   'inbox',
   'activity',
   'me',
@@ -60,17 +57,6 @@ function parseRoute(): Route {
   const base = h.split(/[/?]/)[0] as Route;
   const route = base.split('#')[0] as Route;
   return ROUTES.includes(route) ? route : 'landing';
-}
-
-function parseReshareOutPoint(): string | null {
-  const h = window.location.hash.replace(/^#\/?/, '');
-  const parts = h.split('/').filter(Boolean);
-  if (parts[0] !== 'reshare' || !parts[1]) return null;
-  try {
-    return decodeURIComponent(parts[1]);
-  } catch {
-    return null;
-  }
 }
 
 function defaultUnlock() {
@@ -275,7 +261,7 @@ export function App() {
     route === 'create-review' ||
     route === 'create-share'
       ? 'create'
-      : route === 'claim' || route === 'inbox' || route === 'reshare'
+      : route === 'claim' || route === 'inbox'
       ? 'inbox'
       : route === 'activity'
       ? 'history'
@@ -336,18 +322,7 @@ export function App() {
         />
       )}
       {route === 'claim' && <Claim onOpen={() => go('app')} outPoint={selectedOutPoint} />}
-      {route === 'reshare' && (
-        <Reshare outPoint={parseReshareOutPoint()} onBack={() => go('inbox')} />
-      )}
-      {route === 'inbox' && (
-        <Inbox
-          packets={sentPackets}
-          onRefresh={refreshPackets}
-          onReshare={op => {
-            window.location.hash = `#/reshare/${encodeURIComponent(op)}`;
-          }}
-        />
-      )}
+      {route === 'inbox' && <Inbox packets={sentPackets} onRefresh={refreshPackets} />}
       {route === 'activity' && (
         <Activity sentPackets={sentPackets} claimedPackets={claimedPackets} />
       )}
