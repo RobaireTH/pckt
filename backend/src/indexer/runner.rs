@@ -105,6 +105,7 @@ impl Indexer {
             if let Some(reorg_to) = self.detect_reorg(&block, next).await? {
                 warn!(from = next, to = reorg_to, "reorg detected, rolling back");
                 db::blocks::rollback(&self.state.db, reorg_to).await?;
+                self.restore_live_packets_after_rollback().await;
                 cursor = reorg_to.saturating_sub(1);
                 db::cursor::store(&self.state.db, cursor).await?;
                 continue;
@@ -209,12 +210,23 @@ impl Indexer {
     ) -> anyhow::Result<Option<u64>> {
         if let Some(reorg_to) = self.detect_reorg(block, number).await? {
             db::blocks::rollback(&self.state.db, reorg_to).await?;
+            self.restore_live_packets_after_rollback().await;
             db::cursor::store(&self.state.db, reorg_to.saturating_sub(1)).await?;
             return Ok(Some(reorg_to));
         }
         self.ingest_block(number, block).await?;
         db::cursor::store(&self.state.db, number).await?;
         Ok(None)
+    }
+
+    async fn restore_live_packets_after_rollback(&self) {
+        match self.backfill().await {
+            Ok(n) => info!(restored = n, "live packets restored after rollback"),
+            Err(err) => warn!(
+                ?err,
+                "live-packet restore after rollback failed; rows missed until next bulk backfill"
+            ),
+        }
     }
 
     async fn ingest_block(&self, number: u64, block: &Value) -> anyhow::Result<()> {
