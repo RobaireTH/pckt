@@ -1,5 +1,6 @@
 pub mod bus;
 pub mod ckb;
+pub mod ckb_address;
 pub mod config;
 pub mod crypto;
 pub mod db;

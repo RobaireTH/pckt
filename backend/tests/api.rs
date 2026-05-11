@@ -3,10 +3,12 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
+use bech32::{Bech32m, Hrp};
 use http_body_util::BodyExt;
 use pckt_backend::{
     bus::PacketEventMsg,
     config::{Config, Network, PacketLock},
+    crypto::{hex_str, script_hash},
     db, routes,
     state::AppState,
 };
@@ -117,10 +119,28 @@ async fn empty_packets_list() {
     assert_eq!(body_string(resp).await, "[]");
 }
 
+fn encode_ckt_address(code_hash: &[u8; 32], hash_type: u8, args: &[u8]) -> String {
+    let mut payload = Vec::with_capacity(34 + args.len());
+    payload.push(0x00);
+    payload.extend_from_slice(code_hash);
+    payload.push(hash_type);
+    payload.extend_from_slice(args);
+    bech32::encode::<Bech32m>(Hrp::parse("ckt").unwrap(), &payload).unwrap()
+}
+
 #[tokio::test]
 async fn sender_profile_store_and_fetch() {
     let app = build_app().await;
 
+    let code_hash = [0x22u8; 32];
+    let hash_type = 1u8;
+    let args = [0xaau8; 20];
+    let address = encode_ckt_address(&code_hash, hash_type, &args);
+    let lock_hash = hex_str(&script_hash(&code_hash, hash_type, &args));
+
+    let payload = format!(
+        r#"{{"owner_lock_hash":"{lock_hash}","sender_address":"{address}","username":"shen.bit"}}"#
+    );
     let save = app
         .clone()
         .oneshot(
@@ -128,9 +148,7 @@ async fn sender_profile_store_and_fetch() {
                 .method("POST")
                 .uri("/v1/profiles")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    r#"{"owner_lock_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","sender_address":"ckt1qexample0001","username":"shen.bit"}"#,
-                ))
+                .body(Body::from(payload))
                 .unwrap(),
         )
         .await
@@ -140,7 +158,7 @@ async fn sender_profile_store_and_fetch() {
     let fetch = app
         .oneshot(
             Request::builder()
-                .uri("/v1/profiles/0x0000000000000000000000000000000000000000000000000000000000000001")
+                .uri(format!("/v1/profiles/{lock_hash}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -149,6 +167,29 @@ async fn sender_profile_store_and_fetch() {
     assert_eq!(fetch.status(), StatusCode::OK);
     let body = body_string(fetch).await;
     assert!(body.contains("\"username\":\"shen.bit\""), "body = {body}");
+}
+
+#[tokio::test]
+async fn sender_profile_rejects_mismatched_address() {
+    let app = build_app().await;
+
+    let address = encode_ckt_address(&[0x33u8; 32], 1, &[0xbbu8; 20]);
+    let wrong_lock_hash = "0x0000000000000000000000000000000000000000000000000000000000000001";
+    let payload = format!(
+        r#"{{"owner_lock_hash":"{wrong_lock_hash}","sender_address":"{address}","username":"alice"}}"#
+    );
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/profiles")
+                .header("content-type", "application/json")
+                .body(Body::from(payload))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

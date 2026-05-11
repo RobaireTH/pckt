@@ -5,6 +5,8 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ckb_address::lock_hash_from_address,
+    crypto::hex_str,
     db,
     error::{ApiError, ApiResult},
     state::AppState,
@@ -91,6 +93,20 @@ pub async fn upsert(
     if !is_valid_username(username) {
         return Err(ApiError::BadRequest(
             "username must be 2-24 chars of [A-Za-z0-9_.-], no leading/trailing/double dots or leading/trailing hyphens".into(),
+        ));
+    }
+
+    let derived = lock_hash_from_address(sender_address)
+        .map_err(|_| ApiError::BadRequest("sender_address could not be decoded".into()))?;
+    let expected = owner_lock_hash
+        .strip_prefix("0x")
+        .unwrap_or(owner_lock_hash);
+    if !hex_str(&derived)
+        .trim_start_matches("0x")
+        .eq_ignore_ascii_case(expected)
+    {
+        return Err(ApiError::BadRequest(
+            "sender_address does not match owner_lock_hash".into(),
         ));
     }
 
