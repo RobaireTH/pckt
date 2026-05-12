@@ -7,6 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    crypto::{blake160, hex_str},
     error::{ApiError, ApiResult},
     state::AppState,
 };
@@ -46,6 +47,12 @@ pub async fn store(
         return Err(ApiError::BadRequest(format!(
             "body must be 1..={MAX_BODY_LEN} bytes"
         )));
+    }
+    let computed = hex_str(&blake160(body.body.as_bytes()));
+    if !eq_hex(&computed, &body.message_hash) {
+        return Err(ApiError::BadRequest(
+            "message_hash does not match blake160(body)".into(),
+        ));
     }
     let now = unix_now();
     sqlx::query(
@@ -96,4 +103,40 @@ fn is_hex_hash(s: &str) -> bool {
         return false;
     }
     s[2..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn eq_hex(a: &str, b: &str) -> bool {
+    let a = a
+        .strip_prefix("0x")
+        .or_else(|| a.strip_prefix("0X"))
+        .unwrap_or(a);
+    let b = b
+        .strip_prefix("0x")
+        .or_else(|| b.strip_prefix("0X"))
+        .unwrap_or(b);
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .all(|(x, y)| x.eq_ignore_ascii_case(&y))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{eq_hex, is_hex_hash};
+    use crate::crypto::{blake160, hex_str};
+
+    #[test]
+    fn computed_hash_matches_request_hash() {
+        let body = "hello world";
+        let h = hex_str(&blake160(body.as_bytes()));
+        assert!(eq_hex(&h, &h.to_uppercase()));
+        assert!(is_hex_hash(&h));
+    }
+
+    #[test]
+    fn eq_hex_rejects_mismatch() {
+        let a = hex_str(&blake160(b"a"));
+        let b = hex_str(&blake160(b"b"));
+        assert!(!eq_hex(&a, &b));
+    }
 }
