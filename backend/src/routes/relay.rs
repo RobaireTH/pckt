@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ckb::CkbRpc,
+    config::PacketLock,
     error::{ApiError, ApiResult},
     state::AppState,
 };
@@ -28,12 +29,51 @@ pub async fn submit(
     if !body.signed_tx.is_object() {
         return Err(ApiError::BadRequest("signed_tx must be a tx object".into()));
     }
+    if !tx_references_packet_lock(&body.signed_tx, &state.config.packet_lock) {
+        return Err(ApiError::BadRequest(
+            "tx does not reference the pckt packet_lock cell_dep".into(),
+        ));
+    }
     let rpc = CkbRpc::new(state.config.ckb_rpc_url.clone());
     let tx_hash = rpc.send_transaction(body.signed_tx).await.map_err(|e| {
         tracing::error!(?e, "relay transaction failed");
         classify_relay_error(&e.to_string())
     })?;
+    tracing::info!(tx_hash = %tx_hash, "relayed packet tx");
     Ok(Json(RelayResp { tx_hash }))
+}
+
+fn tx_references_packet_lock(signed_tx: &serde_json::Value, lock: &PacketLock) -> bool {
+    let Some(deps) = signed_tx.get("cell_deps").and_then(|v| v.as_array()) else {
+        return false;
+    };
+    let want_tx = lock
+        .out_point_tx
+        .trim_start_matches("0x")
+        .to_ascii_lowercase();
+    for dep in deps {
+        let Some(op) = dep.get("out_point") else {
+            continue;
+        };
+        let Some(tx_hash) = op.get("tx_hash").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(index_s) = op.get("index").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if tx_hash.trim_start_matches("0x").to_ascii_lowercase() != want_tx {
+            continue;
+        }
+        let idx = index_s
+            .strip_prefix("0x")
+            .or_else(|| index_s.strip_prefix("0X"))
+            .and_then(|h| u32::from_str_radix(h, 16).ok())
+            .or_else(|| index_s.parse::<u32>().ok());
+        if idx == Some(lock.out_point_index) {
+            return true;
+        }
+    }
+    false
 }
 
 fn classify_relay_error(msg: &str) -> ApiError {
@@ -78,8 +118,67 @@ fn enforce_origin(headers: &HeaderMap, allowed: &[String]) -> ApiResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::classify_relay_error;
+    use super::{classify_relay_error, tx_references_packet_lock};
+    use crate::config::PacketLock;
     use crate::error::ApiError;
+
+    fn fixture_lock() -> PacketLock {
+        PacketLock {
+            code_hash: "0xaa".into(),
+            hash_type: "data1".into(),
+            out_point_tx: "0xabcdef0000000000000000000000000000000000000000000000000000000001"
+                .into(),
+            out_point_index: 1,
+        }
+    }
+
+    #[test]
+    fn accepts_tx_with_matching_cell_dep() {
+        let lock = fixture_lock();
+        let tx = serde_json::json!({
+            "cell_deps": [{
+                "out_point": { "tx_hash": lock.out_point_tx, "index": "0x1" },
+                "dep_type": "code"
+            }],
+            "inputs": [],
+            "outputs": [],
+        });
+        assert!(tx_references_packet_lock(&tx, &lock));
+    }
+
+    #[test]
+    fn rejects_tx_with_empty_cell_deps() {
+        let lock = fixture_lock();
+        let tx = serde_json::json!({ "cell_deps": [], "inputs": [], "outputs": [] });
+        assert!(!tx_references_packet_lock(&tx, &lock));
+    }
+
+    #[test]
+    fn rejects_tx_with_foreign_cell_dep() {
+        let lock = fixture_lock();
+        let tx = serde_json::json!({
+            "cell_deps": [{
+                "out_point": {
+                    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                    "index": "0x0"
+                },
+                "dep_type": "code"
+            }],
+        });
+        assert!(!tx_references_packet_lock(&tx, &lock));
+    }
+
+    #[test]
+    fn rejects_tx_with_matching_hash_but_wrong_index() {
+        let lock = fixture_lock();
+        let tx = serde_json::json!({
+            "cell_deps": [{
+                "out_point": { "tx_hash": lock.out_point_tx, "index": "0x2" },
+                "dep_type": "code"
+            }],
+        });
+        assert!(!tx_references_packet_lock(&tx, &lock));
+    }
 
     #[test]
     fn maps_already_claimed_to_conflict() {
