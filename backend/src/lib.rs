@@ -5,6 +5,7 @@ pub mod crypto;
 pub mod db;
 pub mod error;
 pub mod indexer;
+pub mod rate_limit;
 pub mod routes;
 pub mod state;
 
@@ -34,7 +35,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let sweeper_handle = tokio::spawn(async move { run_shortlink_sweeper(sweeper_state).await });
 
     let request_id_header = HeaderName::from_static("x-request-id");
-    let app = routes::router()
+    let app = routes::router(&state)
         .layer(PropagateRequestIdLayer::new(request_id_header.clone()))
         .layer(
             TraceLayer::new_for_http().make_span_with(|req: &Request<_>| {

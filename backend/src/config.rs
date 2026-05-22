@@ -12,6 +12,8 @@ pub struct Config {
     pub shortlink_base: String,
     pub packet_lock: PacketLock,
     pub allowed_origins: Vec<String>,
+    pub rate_limit_rps: f64,
+    pub rate_limit_burst: f64,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -54,6 +56,12 @@ impl Config {
                 .filter(|s| !s.is_empty())
                 .map(str::to_string)
                 .collect(),
+            rate_limit_rps: env_or("RATE_LIMIT_RPS", "5")
+                .parse()
+                .context("RATE_LIMIT_RPS")?,
+            rate_limit_burst: env_or("RATE_LIMIT_BURST", "10")
+                .parse()
+                .context("RATE_LIMIT_BURST")?,
         })
     }
 }
