@@ -170,8 +170,8 @@ impl Indexer {
             .and_then(Value::as_str)
             .unwrap_or("0x");
         let bytes = decode_hex(raw).unwrap_or_default();
-        let state: pckt_types::PacketState =
-            serde_json::from_slice(&bytes).context("decode packet state from backfill")?;
+        let state =
+            pckt_types::PacketState::decode(&bytes).context("decode packet state from backfill")?;
         let out_point = format!("{tx_hash}:{idx}");
         db::packets::upsert(
             &self.state.db,
@@ -365,9 +365,9 @@ impl Indexer {
                 Some(b) => b,
                 None => continue,
             };
-            let state: PacketState = match serde_json::from_slice(&bytes) {
-                Ok(s) => s,
-                Err(_) => continue,
+            let state = match PacketState::decode(&bytes) {
+                Some(s) => s,
+                None => continue,
             };
             let capacity = output
                 .get("capacity")

@@ -11,12 +11,26 @@ use crate::{
 
 const LIST_LIMIT: i64 = 100;
 
-type SummaryRow = (String, i64, i64, i64, String, String, i64, i64);
+type SummaryRow = (
+    String,
+    i64,
+    i64,
+    i64,
+    String,
+    String,
+    i64,
+    i64,
+    String,
+    String,
+    Vec<u8>,
+    Option<String>,
+);
 type EventRow = (String, String, i64, i64, Option<String>, Option<String>);
 
 const SELECT_SUMMARY: &str = r#"
     SELECT out_point, packet_type, slots_total, slots_claimed,
-           initial_capacity, current_capacity, expiry, unlock_time
+           initial_capacity, current_capacity, expiry, unlock_time,
+           owner_lock_hash, claim_pubkey_hash, salt, message_body
     FROM packets
 "#;
 
@@ -35,6 +49,10 @@ pub struct PacketSummary {
     pub current_capacity: String,
     pub expiry: u64,
     pub unlock_time: u64,
+    pub owner_lock_hash: String,
+    pub claim_pubkey_hash: String,
+    pub salt: String,
+    pub message_body: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -57,6 +75,13 @@ fn row_to_summary(r: SummaryRow) -> PacketSummary {
         current_capacity: r.5,
         expiry: r.6 as u64,
         unlock_time: r.7 as u64,
+        owner_lock_hash: r.8,
+        claim_pubkey_hash: r.9,
+        salt: format!(
+            "0x{}",
+            r.10.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        ),
+        message_body: r.11,
     }
 }
 

@@ -20,7 +20,7 @@ pub async fn upsert(pool: &SqlitePool, row: PacketRow<'_>) -> Result<()> {
             initial_capacity, current_capacity, expiry, unlock_time, \
             owner_lock_hash, claim_pubkey_hash, salt, message_hash, \
             message_body, sealed_at, last_seen_block) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, ?13, ?14) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15) \
          ON CONFLICT(out_point) DO UPDATE SET \
             slots_claimed = excluded.slots_claimed, \
             current_capacity = excluded.current_capacity, \
@@ -37,7 +37,8 @@ pub async fn upsert(pool: &SqlitePool, row: PacketRow<'_>) -> Result<()> {
     .bind(hex_str(&row.state.owner_lock_hash))
     .bind(claim_pubkey_hash)
     .bind(row.state.salt.clone())
-    .bind(row.state.message_hash.clone())
+    .bind(blake160(&row.state.message).to_vec())
+    .bind(row.state.message.clone())
     .bind(row.sealed_at as i64)
     .bind(row.block_number as i64)
     .execute(pool)
