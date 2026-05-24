@@ -5,16 +5,8 @@ use pckt_backend::{
 use pckt_types::{PacketState, PacketType};
 use sqlx::sqlite::SqlitePoolOptions;
 
-#[tokio::test]
-async fn upsert_packet_round_trip() {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .unwrap();
-    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-
-    let state = PacketState {
+fn sample_state() -> PacketState {
+    PacketState {
         version: 1,
         packet_type: PacketType::Fixed,
         slots_total: 5,
@@ -25,8 +17,21 @@ async fn upsert_packet_round_trip() {
         owner_lock_hash: vec![0x11; 32],
         claim_pubkey: vec![0x22; 33],
         salt: vec![0x33; 16],
-        message_hash: vec![0x44; 20],
-    };
+        message: b"happy birthday".to_vec(),
+        claimed_locks: vec![],
+    }
+}
+
+#[tokio::test]
+async fn upsert_packet_round_trip() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+    let state = sample_state();
 
     db::packets::upsert(
         &pool,
@@ -89,7 +94,7 @@ fn script_hash_is_deterministic_and_args_sensitive() {
 }
 
 #[test]
-fn packet_state_json_roundtrip() {
+fn packet_state_molecule_roundtrip() {
     let state = PacketState {
         version: 1,
         packet_type: PacketType::TimedLucky,
@@ -101,12 +106,15 @@ fn packet_state_json_roundtrip() {
         owner_lock_hash: vec![0xaa; 32],
         claim_pubkey: vec![0xbb; 33],
         salt: vec![0xcc; 16],
-        message_hash: vec![0xdd; 20],
+        message: b"hidden".to_vec(),
+        claimed_locks: vec![vec![0xdd; 32]],
     };
-    let bytes = serde_json::to_vec(&state).unwrap();
-    let back: PacketState = serde_json::from_slice(&bytes).unwrap();
+    let bytes = state.encode().unwrap();
+    let back = PacketState::decode(&bytes).unwrap();
     assert_eq!(back.slots_total, 10);
     assert_eq!(back.slots_claimed, 3);
     assert!(back.packet_type.is_timed());
     assert!(back.packet_type.is_lucky());
+    assert_eq!(back.message, state.message);
+    assert_eq!(back.claimed_locks, state.claimed_locks);
 }

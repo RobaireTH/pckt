@@ -36,13 +36,43 @@ async fn build_state() -> AppState {
             out_point_index: 0,
         },
         allowed_origins: vec!["*".into()],
+        rate_limit_rps: 1000.0,
+        rate_limit_burst: 1000.0,
+    };
+    AppState::new(pool, config)
+}
+
+async fn build_state_with_limit(rps: f64, burst: f64) -> AppState {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+    let config = Config {
+        network: Network::Devnet,
+        ckb_rpc_url: "http://127.0.0.1:0".into(),
+        ckb_indexer_url: "http://127.0.0.1:0".into(),
+        database_url: "sqlite::memory:".into(),
+        port: 0,
+        price_feed_url: "http://127.0.0.1:0".into(),
+        shortlink_base: "http://example.test".into(),
+        packet_lock: PacketLock {
+            code_hash: "0x00".into(),
+            hash_type: "data1".into(),
+            out_point_tx: "0x00".into(),
+            out_point_index: 0,
+        },
+        allowed_origins: vec!["*".into()],
+        rate_limit_rps: rps,
+        rate_limit_burst: burst,
     };
     AppState::new(pool, config)
 }
 
 async fn build_app() -> Router {
     let state = build_state().await;
-    routes::router().with_state(state)
+    routes::router(&state).with_state(state)
 }
 
 async fn body_string(resp: axum::response::Response) -> String {
@@ -222,7 +252,7 @@ async fn cursor_roundtrip() {
 #[tokio::test]
 async fn sse_publishes_event() {
     let state = build_state().await;
-    let app = routes::router().with_state(state.clone());
+    let app = routes::router(&state).with_state(state.clone());
 
     let bus = state.bus.clone();
     let pump = tokio::spawn(async move {
@@ -299,4 +329,27 @@ async fn block_hashes_record_and_rollback() {
         db::blocks::hash_at(&pool, 1).await.unwrap().as_deref(),
         Some("0xaaa")
     );
+}
+
+#[tokio::test]
+async fn rate_limit_returns_429_after_burst() {
+    let state = build_state_with_limit(0.5, 2.0).await;
+    let app = routes::router(&state).with_state(state);
+
+    let make_req = || {
+        Request::builder()
+            .method("POST")
+            .uri("/v1/links")
+            .header("content-type", "application/json")
+            .header("x-forwarded-for", "192.0.2.1")
+            .body(Body::from(r#"{"full_url":"https://example.com"}"#))
+            .unwrap()
+    };
+
+    let r1 = app.clone().oneshot(make_req()).await.unwrap();
+    assert_eq!(r1.status(), StatusCode::OK);
+    let r2 = app.clone().oneshot(make_req()).await.unwrap();
+    assert_eq!(r2.status(), StatusCode::OK);
+    let r3 = app.oneshot(make_req()).await.unwrap();
+    assert_eq!(r3.status(), StatusCode::TOO_MANY_REQUESTS);
 }

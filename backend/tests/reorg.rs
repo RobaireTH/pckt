@@ -30,6 +30,8 @@ async fn make_state() -> AppState {
             out_point_index: 0,
         },
         allowed_origins: vec!["*".into()],
+        rate_limit_rps: 1000.0,
+        rate_limit_burst: 1000.0,
     };
     AppState::new(pool, config)
 }
