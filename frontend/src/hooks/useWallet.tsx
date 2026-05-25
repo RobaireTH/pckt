@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useCcc } from '@ckb-ccc/connector-react';
+import { useCcc, Script, type Signer, type Client } from '@ckb-ccc/connector-react';
 
 export type DisplayWallet = {
   walletName: string;
@@ -15,18 +15,34 @@ function shorten(a: string) {
 }
 
 export function useWallet() {
-  const { wallet, signerInfo, isOpen, open, close, disconnect } = useCcc();
+  const { wallet, signerInfo, client, isOpen, open, close, disconnect } = useCcc();
   const [address, setAddress] = useState('');
+  const [lockHash, setLockHash] = useState<string | null>(null);
+  const [lockScript, setLockScript] = useState<Script | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     if (!signerInfo?.signer) {
       setAddress('');
+      setLockHash(null);
+      setLockScript(null);
       return;
     }
-    signerInfo.signer.getRecommendedAddress().then(
+    const signer = signerInfo.signer;
+    signer.getRecommendedAddress().then(
       addr => {
         if (!cancelled) setAddress(addr);
+      },
+      () => {
+        /* ignore */
+      },
+    );
+    signer.getRecommendedAddressObj().then(
+      addrObj => {
+        if (cancelled) return;
+        const script = addrObj.script;
+        setLockScript(script);
+        setLockHash(script.hash());
       },
       () => {
         /* ignore */
@@ -36,6 +52,8 @@ export function useWallet() {
       cancelled = true;
     };
   }, [signerInfo]);
+
+  const signer: Signer | null = signerInfo?.signer ?? null;
 
   const displayed: DisplayWallet | null =
     wallet && signerInfo
@@ -50,6 +68,10 @@ export function useWallet() {
 
   return {
     wallet: displayed,
+    signer,
+    client: client as Client,
+    lockHash,
+    lockScript,
     isConnectOpen: isOpen,
     openConnect: open,
     closeConnect: close,
