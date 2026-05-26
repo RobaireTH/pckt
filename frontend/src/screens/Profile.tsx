@@ -3,6 +3,7 @@ import { Avatar } from '../components/ui/Avatar';
 import { Button } from '../components/ui/Button';
 import { Icon, IconName } from '../components/ui/Icon';
 import { useWallet } from '../hooks/useWallet';
+import type { PacketSummary } from '../api';
 
 type Theme = 'light' | 'dark';
 
@@ -10,7 +11,7 @@ function currentTheme(): Theme {
   return document.documentElement.classList.contains('theme-dark') ? 'dark' : 'light';
 }
 
-export function Profile() {
+export function Profile({ packets, priceUsd }: { packets: PacketSummary[]; priceUsd: number | null }) {
   const { wallet, openConnect, disconnect } = useWallet();
   const [theme, setTheme] = useState<Theme>(currentTheme);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
@@ -58,6 +59,8 @@ export function Profile() {
       () => {},
     );
   };
+  const balanceCkb = packets.reduce((sum, p) => sum + Math.floor(Number(p.current_capacity) / 100000000), 0);
+  const movedCkb = packets.reduce((sum, p) => sum + Math.floor(Number(p.initial_capacity) / 100000000), 0);
 
   return (
     <div className="pckt-page">
@@ -180,7 +183,7 @@ export function Profile() {
                     lineHeight: 1,
                   }}
                 >
-                  12,840
+                  {balanceCkb.toLocaleString()}
                 </span>
                 <span
                   style={{
@@ -200,7 +203,7 @@ export function Profile() {
                   marginTop: 4,
                 }}
               >
-                ≈ $128.40 USD
+                {priceUsd ? `≈ $${(balanceCkb * priceUsd).toFixed(2)} USD` : 'Price unavailable'}
               </div>
             </div>
           </section>
@@ -217,9 +220,13 @@ export function Profile() {
                 overflow: 'hidden',
               }}
             >
-              <Stat label="Sent" value="14" sub="packets" />
-              <Stat label="Received" value="22" sub="claims" />
-              <Stat label="Moved" value="5.2K" sub="CKB" />
+              <Stat label="Sent" value={String(packets.length)} sub="packets" />
+              <Stat
+                label="Received"
+                value={String(packets.filter(p => p.slots_claimed > 0).length)}
+                sub="active"
+              />
+              <Stat label="Moved" value={`${movedCkb.toLocaleString()}`} sub="CKB" />
             </div>
           </section>
         </>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Icon } from '../components/ui/Icon';
 import { Chip } from '../components/ui/Chip';
 import { Packet } from '../components/Packet';
+import type { PacketSummary } from '../api';
 
 type InboxItem = {
   id: string;
@@ -15,77 +16,33 @@ type InboxItem = {
   when: string;
 };
 
-const items: InboxItem[] = [
-  {
-    id: 'a',
-    from: 'shen.bit',
-    message: 'Fold · Seal · Send',
-    status: 'open',
-    variant: 'crimson',
-    kind: 'Lucky',
-    meta: '8 of 20 slots remain',
-    when: 'just now',
-  },
-  {
-    id: 'b',
-    from: 'mei.bit',
-    message: 'for the team',
-    status: 'open',
-    variant: 'ink',
-    kind: 'Fixed',
-    meta: '50 CKB each',
-    when: '2h',
-  },
-  {
-    id: 'c',
-    from: '0xa3…3x4e',
-    message: 'New Year countdown',
-    status: 'timed',
-    variant: 'crimson',
-    kind: 'Timed',
-    meta: 'unlocks in 02:14:06',
-    when: '1d',
-  },
-  {
-    id: 'd',
-    from: 'kai.bit',
-    message: 'gm',
-    status: 'claimed',
-    variant: 'foil',
-    kind: 'Lucky',
-    amount: '+56',
-    meta: 'claimed · lucky',
-    when: 'Apr 22',
-  },
-  {
-    id: 'e',
-    from: 'rin.bit',
-    message: 'thanks for last night',
-    status: 'claimed',
-    variant: 'foil',
-    kind: 'Fixed',
-    amount: '+128',
-    meta: 'claimed · fixed',
-    when: 'Apr 19',
-  },
-  {
-    id: 'f',
-    from: '0x9b…21fa',
-    message: 'hbd 🎂',
-    status: 'expired',
-    variant: 'ink',
-    kind: 'Fixed',
-    meta: 'expired unclaimed',
-    when: 'Apr 11',
-  },
-];
-
 type Filter = 'all' | 'open' | 'past';
 
-type Props = { onOpen: () => void };
+type Props = { packets: PacketSummary[]; onOpen: (outPoint: string) => void };
 
-export function Inbox({ onOpen }: Props) {
+export function Inbox({ packets, onOpen }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
+  const now = Math.floor(Date.now() / 1000);
+  const items: InboxItem[] = packets.map(p => {
+    const open = p.slots_claimed < p.slots_total && p.unlock_time <= now && p.expiry > now;
+    const timed = p.unlock_time > now && p.expiry > now;
+    const expired = p.expiry <= now;
+    const status: InboxItem['status'] = open ? 'open' : timed ? 'timed' : expired ? 'expired' : 'claimed';
+    const kind = p.packet_type === 1 ? 'Fixed' : p.packet_type === 2 ? 'Timed' : 'Lucky';
+    return {
+      id: p.out_point,
+      from: `${p.owner_lock_hash.slice(0, 6)}…${p.owner_lock_hash.slice(-4)}`,
+      message: p.message_body || 'A packet for you',
+      status,
+      variant: status === 'claimed' ? 'foil' : 'crimson',
+      kind,
+      meta:
+        status === 'timed'
+          ? `unlocks at ${new Date(p.unlock_time * 1000).toLocaleString()}`
+          : `${Math.max(0, p.slots_total - p.slots_claimed)} of ${p.slots_total} slots remain`,
+      when: new Date(p.unlock_time * 1000).toLocaleDateString(),
+    };
+  });
 
   const visible = items.filter(item => {
     if (filter === 'open') return item.status === 'open' || item.status === 'timed';
@@ -131,7 +88,11 @@ export function Inbox({ onOpen }: Props) {
       {openItems.length > 0 && (
         <Section title="Open">
           {openItems.map(item => (
-            <InboxRow key={item.id} item={item} onClick={item.status === 'open' ? onOpen : undefined} />
+            <InboxRow
+              key={item.id}
+              item={item}
+              onClick={item.status === 'open' ? () => onOpen(item.id) : undefined}
+            />
           ))}
         </Section>
       )}

@@ -3,8 +3,14 @@ import { Avatar } from '../components/ui/Avatar';
 import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
+import type { PacketSummary } from '../api';
 
-type Props = { onSend: () => void; onClaim: () => void };
+type Props = {
+  onSend: () => void;
+  onClaim: () => void;
+  packets: PacketSummary[];
+  priceUsd: number | null;
+};
 
 type ActivePacket = {
   amount: string;
@@ -12,12 +18,6 @@ type ActivePacket = {
   meta: string;
   variant: 'crimson' | 'ink' | 'foil';
 };
-
-const active: ActivePacket[] = [
-  { amount: '888', kind: 'Lucky', meta: '12 / 20 claimed', variant: 'crimson' },
-  { amount: '500', kind: 'Fixed', meta: '3 / 5 claimed', variant: 'ink' },
-  { amount: '2K', kind: 'Timed', meta: 'unlocks in 02:14', variant: 'crimson' },
-];
 
 type LedgerRow = {
   direction: 'in' | 'out';
@@ -27,17 +27,25 @@ type LedgerRow = {
   at: string;
 };
 
-const ledger: LedgerRow[] = [
-  { direction: 'out', title: 'Family group · Lucky', meta: 'Sent to 20 recipients', amount: '−888', at: '2h' },
-  { direction: 'in',  title: 'Claimed · mei.bit',    meta: 'From 0xa3…3x4e',        amount: '+128', at: '1d' },
-  { direction: 'out', title: 'Birthday · Fixed',     meta: 'Sent to 5 recipients', amount: '−250', at: 'Apr 14' },
-  { direction: 'in',  title: 'Claimed · kai.bit',    meta: 'From 0x9b…21fa',       amount: '+56',  at: 'Apr 11' },
-];
-
-export function Home({ onSend, onClaim }: Props) {
+export function Home({ onSend, onClaim, packets, priceUsd }: Props) {
   const { wallet, openConnect } = useWallet();
   const displayName = wallet?.shortAddress ?? 'Guest';
   const initials = wallet?.initials ?? '??';
+  const active: ActivePacket[] = packets.slice(0, 6).map(p => ({
+    amount: String(Math.floor(Number(p.current_capacity) / 100000000)),
+    kind: p.packet_type === 1 ? 'Fixed' : p.packet_type === 2 ? 'Timed' : 'Lucky',
+    meta: `${p.slots_claimed} / ${p.slots_total} claimed`,
+    variant: p.packet_type === 1 ? 'ink' : 'crimson',
+  }));
+  const balanceCkb = packets.reduce((sum, p) => sum + Math.floor(Number(p.current_capacity) / 100000000), 0);
+  const usd = priceUsd ? (balanceCkb * priceUsd).toFixed(2) : null;
+  const ledger: LedgerRow[] = packets.slice(0, 8).map(p => ({
+    direction: 'out',
+    title: `${p.packet_type === 1 ? 'Fixed' : p.packet_type === 2 ? 'Timed' : 'Lucky'} packet`,
+    meta: `${p.slots_claimed}/${p.slots_total} claimed`,
+    amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
+    at: new Date(p.unlock_time * 1000).toLocaleDateString(),
+  }));
 
   return (
     <div>
@@ -90,7 +98,7 @@ export function Home({ onSend, onClaim }: Props) {
                 lineHeight: 1,
               }}
             >
-              {wallet ? '12,840' : '—'}
+              {wallet ? balanceCkb.toLocaleString() : '—'}
             </span>
             <span
               style={{ fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--fg-muted)' }}
@@ -106,7 +114,7 @@ export function Home({ onSend, onClaim }: Props) {
               marginTop: 6,
             }}
           >
-            {wallet ? '≈ $128.40 USD' : 'Connect a wallet to see your balance'}
+            {wallet ? `≈ ${usd ? `$${usd}` : '...'} USD` : 'Connect a wallet to see your balance'}
           </div>
         </div>
 

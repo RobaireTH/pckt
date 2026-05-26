@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Chip } from '../components/ui/Chip';
+import type { PacketSummary } from '../api';
 
 type LedgerRow = {
   direction: 'in' | 'out';
@@ -11,19 +12,6 @@ type LedgerRow = {
   group: 'today' | 'week' | 'earlier';
 };
 
-const rows: LedgerRow[] = [
-  { direction: 'out', kind: 'Lucky', title: 'Family group · Lucky', meta: 'Sent to 20 recipients · 12 claimed', amount: '−888', at: '2h ago', group: 'today' },
-  { direction: 'in',  kind: 'Claim', title: 'Claimed · mei.bit', meta: 'From 0xa3…3x4e', amount: '+128', at: '5h ago', group: 'today' },
-  { direction: 'out', kind: 'Fixed', title: 'Birthday · Fixed', meta: 'Sent to 5 recipients · 3 claimed', amount: '−250', at: 'Yesterday', group: 'week' },
-  { direction: 'in',  kind: 'Claim', title: 'Claimed · kai.bit', meta: 'From 0x9b…21fa', amount: '+56',  at: 'Apr 22', group: 'week' },
-  { direction: 'out', kind: 'Timed', title: 'Countdown · Timed unlock', meta: 'Sent to 12 recipients · unlocks Apr 26', amount: '−2000', at: 'Apr 21', group: 'week' },
-  { direction: 'in',  kind: 'Claim', title: 'Claimed · shen.bit', meta: 'From 0x4f…8a12', amount: '+220', at: 'Apr 19', group: 'week' },
-  { direction: 'out', kind: 'Fixed', title: 'Coffee run · Fixed', meta: 'Sent to 3 recipients · all claimed', amount: '−75', at: 'Apr 14', group: 'earlier' },
-  { direction: 'in',  kind: 'Refund', title: 'Refund · expired packet', meta: '2 unclaimed slots returned', amount: '+80', at: 'Apr 12', group: 'earlier' },
-  { direction: 'in',  kind: 'Claim', title: 'Claimed · rin.bit', meta: 'From 0x1a…5c9d', amount: '+40', at: 'Apr 11', group: 'earlier' },
-  { direction: 'out', kind: 'Lucky', title: 'Team bonus · Lucky', meta: 'Sent to 8 recipients · 8 claimed', amount: '−500', at: 'Apr 8', group: 'earlier' },
-];
-
 type Filter = 'all' | 'sent' | 'received';
 
 const groupLabels: Record<LedgerRow['group'], string> = {
@@ -32,8 +20,22 @@ const groupLabels: Record<LedgerRow['group'], string> = {
   earlier: 'Earlier',
 };
 
-export function Activity() {
+export function Activity({ packets }: { packets: PacketSummary[] }) {
   const [filter, setFilter] = useState<Filter>('all');
+  const now = Date.now() / 1000;
+  const rows: LedgerRow[] = packets.map(p => {
+    const kind: LedgerRow['kind'] = p.packet_type === 1 ? 'Fixed' : p.packet_type === 2 ? 'Timed' : 'Lucky';
+    const ageDays = (now - p.unlock_time) / 86400;
+    return {
+      direction: 'out',
+      kind,
+      title: `${kind} packet`,
+      meta: `${p.slots_claimed}/${p.slots_total} claimed`,
+      amount: `-${Math.floor(Number(p.initial_capacity) / 100000000)}`,
+      at: new Date(p.unlock_time * 1000).toLocaleDateString(),
+      group: ageDays < 1 ? 'today' : ageDays < 7 ? 'week' : 'earlier',
+    };
+  });
 
   const visible = rows.filter(r => {
     if (filter === 'sent') return r.direction === 'out';
