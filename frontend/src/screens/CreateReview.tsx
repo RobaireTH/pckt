@@ -1,14 +1,16 @@
+import { useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Icon } from '../components/ui/Icon';
 import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
+import { buildAndRelaySealTx } from '../tx';
 import type { Draft } from './CreateAmount';
 
 type Props = {
   draft: Draft;
   onBack: () => void;
-  onSeal: () => void;
+  onSeal: (result: { txHash: string; claimLink: string; publicShortLink: string }) => void;
   onClose: () => void;
 };
 
@@ -19,7 +21,9 @@ const TYPE_LABEL: Record<Draft['type'], string> = {
 };
 
 export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
-  const { wallet } = useWallet();
+  const { wallet, signer, lockHash, openConnect } = useWallet();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { type, amount, slots, message, unlock } = draft;
   const numAmount = Number(amount) || 0;
   const avg = slots > 0 ? Math.max(1, Math.round(numAmount / slots)) : 0;
@@ -55,11 +59,28 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
     { label: 'From', value: wallet ? wallet.shortAddress : 'Not connected', mono: !!wallet },
   );
 
-  const sealLabel = wallet ? 'Seal & sign' : 'Connect to seal';
+  const sealLabel = submitting ? 'Sealing…' : wallet ? 'Seal & sign' : 'Connect to seal';
   const sealIcon = wallet ? 'seal' : 'wallet';
   const signedFromNote = wallet
     ? `Signs with ${wallet.walletName} · ${wallet.shortAddress}`
     : 'A wallet is required to sign and lock funds';
+
+  const sealNow = async () => {
+    if (!wallet || !signer || !lockHash) {
+      openConnect();
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await buildAndRelaySealTx({ draft, signer, ownerLockHash: lockHash });
+      onSeal(result);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -191,9 +212,10 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
           </section>
 
           <div className="pckt-create-mobile-cta" style={{ padding: '20px 20px 32px' }}>
-            <Button variant="primary" size="lg" full icon={sealIcon} onClick={onSeal}>
+            <Button variant="primary" size="lg" full icon={sealIcon} onClick={sealNow} disabled={submitting}>
               {sealLabel}
             </Button>
+            {error && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--crimson-600)' }}>{error}</div>}
             <div
               style={{
                 textAlign: 'center',
@@ -238,7 +260,7 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
           >
             {TYPE_LABEL[type]} · {slots} slots · {amount} CKB
           </div>
-          <Button variant="primary" size="lg" full icon={sealIcon} onClick={onSeal}>
+          <Button variant="primary" size="lg" full icon={sealIcon} onClick={sealNow} disabled={submitting}>
             {sealLabel}
           </Button>
           <div

@@ -8,14 +8,14 @@ type Props = {
   draft: Draft;
   onAnother: () => void;
   onHome: () => void;
+  claimLink: string;
+  publicShortLink: string;
+  txHash: string;
 };
 
-export function CreateShare({ draft, onAnother, onHome }: Props) {
+export function CreateShare({ draft, onAnother, onHome, claimLink, publicShortLink, txHash }: Props) {
   const { amount, message, slots } = draft;
-  const [shareId] = useState(() =>
-    Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6),
-  );
-  const link = `pckt.app/c/${shareId}`;
+  const [link] = useState(claimLink.replace(/^https?:\/\//, ''));
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
@@ -72,6 +72,10 @@ export function CreateShare({ draft, onAnother, onHome }: Props) {
       >
         Share this link with anyone. The first {slots} claims get a slice of {amount} CKB.
       </p>
+      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--fg-muted)', maxWidth: 440 }}>
+        This secure link includes the claim secret in the URL fragment (client-side only). The backend
+        only receives the public short link.
+      </div>
 
       <div className="pckt-share-packet">
         <Packet
@@ -123,6 +127,14 @@ export function CreateShare({ draft, onAnother, onHome }: Props) {
             Share
           </Button>
         </div>
+        <div style={{ width: '100%', marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-quiet)' }}>
+          Seal tx: {txHash.slice(0, 14)}…{txHash.slice(-8)}
+        </div>
+        {publicShortLink && (
+          <div style={{ width: '100%', marginTop: 4, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-quiet)' }}>
+            Public short link: {publicShortLink.replace(/^https?:\/\//, '')}
+          </div>
+        )}
       </div>
 
       <div className="pckt-share-qr">
