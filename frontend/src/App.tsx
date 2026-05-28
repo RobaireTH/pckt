@@ -11,6 +11,7 @@ import { Activity } from './screens/Activity';
 import { Profile } from './screens/Profile';
 import { AppShell } from './components/layout/AppShell';
 import { useWallet } from './hooks/useWallet';
+import { fetchCkbPrice, fetchPackets, type PacketSummary } from './api';
 
 export type Route =
   | 'landing'
@@ -38,8 +39,10 @@ const ROUTES: Route[] = [
 ];
 
 function parseRoute(): Route {
-  const h = window.location.hash.replace(/^#\/?/, '') as Route;
-  return ROUTES.includes(h) ? h : 'landing';
+  const h = window.location.hash.replace(/^#\/?/, '');
+  const base = h.split(/[/?]/)[0] as Route;
+  const route = base.split('#')[0] as Route;
+  return ROUTES.includes(route) ? route : 'landing';
 }
 
 function defaultUnlock() {
@@ -62,7 +65,15 @@ function initialDraft(): Draft {
 export function App() {
   const [route, setRoute] = useState<Route>(parseRoute);
   const [draft, setDraft] = useState<Draft>(initialDraft);
-  const { wallet, openConnect } = useWallet();
+  const { wallet } = useWallet();
+  const [packets, setPackets] = useState<PacketSummary[]>([]);
+  const [selectedOutPoint, setSelectedOutPoint] = useState<string | null>(null);
+  const [priceUsd, setPriceUsd] = useState<number | null>(null);
+  const [lastSeal, setLastSeal] = useState<{
+    txHash: string;
+    claimLink: string;
+    publicShortLink: string;
+  } | null>(null);
 
   useEffect(() => {
     const onHash = () => {
@@ -71,6 +82,37 @@ export function App() {
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const owner = wallet?.address;
+    fetchPackets(owner).then(
+      data => {
+        if (!cancelled) setPackets(data);
+      },
+      () => {
+        if (!cancelled) setPackets([]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet?.address, route]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCkbPrice().then(
+      p => {
+        if (!cancelled) setPriceUsd(p.usd);
+      },
+      () => {
+        if (!cancelled) setPriceUsd(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const go = (r: Route) => {
@@ -83,11 +125,6 @@ export function App() {
   const startNewDraft = () => {
     setDraft(initialDraft());
     go('create');
-  };
-
-  const onSealAttempt = () => {
-    if (wallet) go('create-share');
-    else openConnect();
   };
 
   if (route === 'landing') {
@@ -110,7 +147,14 @@ export function App() {
 
   return (
     <AppShell active={activeTab} go={go}>
-      {route === 'app' && <Home onSend={() => go('create')} onClaim={() => go('inbox')} />}
+      {route === 'app' && (
+        <Home
+          onSend={() => go('create')}
+          onClaim={() => go('inbox')}
+          packets={packets}
+          priceUsd={priceUsd}
+        />
+      )}
       {route === 'create' && (
         <CreateType
           selected={draft.type}
@@ -133,17 +177,35 @@ export function App() {
         <CreateReview
           draft={draft}
           onBack={() => go('create-amount')}
-          onSeal={onSealAttempt}
+          onSeal={result => {
+            setLastSeal(result);
+            go('create-share');
+          }}
           onClose={() => go('app')}
         />
       )}
       {route === 'create-share' && (
-        <CreateShare draft={draft} onAnother={startNewDraft} onHome={() => go('app')} />
+        <CreateShare
+          draft={draft}
+          onAnother={startNewDraft}
+          onHome={() => go('app')}
+          claimLink={lastSeal?.claimLink ?? `${window.location.origin}/#/claim`}
+          publicShortLink={lastSeal?.publicShortLink ?? ''}
+          txHash={lastSeal?.txHash ?? 'pending'}
+        />
       )}
-      {route === 'claim' && <Claim onOpen={() => go('app')} />}
-      {route === 'inbox' && <Inbox onOpen={() => go('claim')} />}
-      {route === 'activity' && <Activity />}
-      {route === 'me' && <Profile />}
+      {route === 'claim' && <Claim onOpen={() => go('app')} outPoint={selectedOutPoint} />}
+      {route === 'inbox' && (
+        <Inbox
+          packets={packets}
+          onOpen={outPoint => {
+            setSelectedOutPoint(outPoint);
+            go('claim');
+          }}
+        />
+      )}
+      {route === 'activity' && <Activity packets={packets} />}
+      {route === 'me' && <Profile packets={packets} priceUsd={priceUsd} />}
     </AppShell>
   );
 }

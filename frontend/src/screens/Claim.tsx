@@ -1,11 +1,99 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Packet } from '../components/Packet';
+import { fetchPacket, fetchPacketByPubkey, type PacketSummary } from '../api';
+import { useWallet } from '../hooks/useWallet';
+import { buildAndRelayClaimTx } from '../tx';
 
-type Props = { onOpen: () => void };
+type Props = { onOpen: () => void; outPoint: string | null };
 
-export function Claim({ onOpen }: Props) {
+export function Claim({ onOpen, outPoint }: Props) {
   const [opened, setOpened] = useState(false);
+  const [packet, setPacket] = useState<PacketSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const { signer, wallet, openConnect } = useWallet();
+
+  const routeParts = useMemo(() => {
+    const h = window.location.hash.replace(/^#\/?/, '');
+    const pathOnly = h.split('?')[0];
+    return pathOnly.split('/').filter(Boolean);
+  }, []);
+
+  const pathPubkey = routeParts[1] || '';
+  const pathSk = routeParts[2] || '';
+
+  const queryPubkey = useMemo(() => {
+    const hash = window.location.hash;
+    const idx = hash.indexOf('?');
+    if (idx < 0) return '';
+    return new URLSearchParams(hash.slice(idx + 1)).get('pubkey') || '';
+  }, []);
+  const claimPubkey = pathPubkey || queryPubkey;
+  const claimSk = pathSk;
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const req = outPoint
+      ? fetchPacket(outPoint)
+      : claimPubkey
+      ? fetchPacketByPubkey(claimPubkey)
+      : Promise.reject(new Error('No claim link selected'));
+    req.then(
+      p => {
+        if (!cancelled) setPacket(p);
+      },
+      e => {
+        if (!cancelled) setError(String(e));
+      },
+    ).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [outPoint, claimPubkey]);
+
+  const from = packet
+    ? `${packet.owner_lock_hash.slice(0, 6)}…${packet.owner_lock_hash.slice(-4)}`
+    : 'unknown';
+  const message = packet?.message_body || 'A packet for you';
+  const remaining = packet ? Math.max(0, packet.slots_total - packet.slots_claimed) : 0;
+  const totalCkb = packet ? Math.floor(Number(packet.current_capacity) / 100000000) : 0;
+  const hintAmount = remaining > 0 ? Math.max(1, Math.floor(totalCkb / remaining)) : 0;
+  const targetOutPoint = outPoint || packet?.out_point || null;
+
+  const claimNow = async () => {
+    if (!wallet || !signer) {
+      openConnect();
+      return;
+    }
+    if (!targetOutPoint) {
+      setError('No packet selected');
+      return;
+    }
+    if (!claimSk) {
+      setError('Missing claim key in link');
+      return;
+    }
+    setClaiming(true);
+    setError(null);
+    try {
+      await buildAndRelayClaimTx({
+        outPoint: targetOutPoint,
+        signer,
+        claimPrivateKey: claimSk,
+      });
+      setOpened(true);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setClaiming(false);
+    }
+  };
 
   return (
     <div className="pckt-claim-wrap">
@@ -21,10 +109,10 @@ export function Claim({ onOpen }: Props) {
           color: 'var(--fg)',
         }}
       >
-        <em style={{ fontStyle: 'italic' }}>from</em> shen.bit
+        <em style={{ fontStyle: 'italic' }}>from</em> {from}
       </div>
       <div style={{ fontSize: 14, color: 'var(--fg-muted)', marginBottom: 28 }}>
-        “Fold · Seal · Send”
+        “{message}”
       </div>
 
       <div
@@ -37,14 +125,16 @@ export function Claim({ onOpen }: Props) {
         <Packet
           width={260}
           height={368}
-          amount={opened ? '56' : '888'}
-          from="shen.bit"
-          message="Fold · Seal · Send"
+          amount={opened ? String(hintAmount) : String(totalCkb || '0')}
+          from={from}
+          message={message}
           status={opened ? 'claimed' : 'sealed'}
         />
       </div>
 
       <div style={{ marginTop: 36, width: '100%', maxWidth: 360 }}>
+        {loading && <div style={{ textAlign: 'center', color: 'var(--fg-muted)', marginBottom: 12 }}>Loading claim details…</div>}
+        {error && <div style={{ textAlign: 'center', color: 'var(--danger)', marginBottom: 12 }}>{error}</div>}
         {!opened ? (
           <>
             <Button
@@ -52,9 +142,10 @@ export function Claim({ onOpen }: Props) {
               size="lg"
               full
               icon="sparkle"
-              onClick={() => setOpened(true)}
+              onClick={claimNow}
+              disabled={claiming || loading}
             >
-              Open packet
+              {claiming ? 'Claiming…' : 'Open packet'}
             </Button>
             <div
               style={{
@@ -66,7 +157,7 @@ export function Claim({ onOpen }: Props) {
                 textAlign: 'center',
               }}
             >
-              8 of 20 slots remain · random split
+              {remaining} of {packet?.slots_total ?? 0} slots remain
             </div>
           </>
         ) : (
@@ -81,7 +172,7 @@ export function Claim({ onOpen }: Props) {
                 textAlign: 'center',
               }}
             >
-              +56 CKB
+              +{hintAmount} CKB
             </div>
             <div
               style={{
