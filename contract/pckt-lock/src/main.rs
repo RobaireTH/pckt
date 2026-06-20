@@ -16,7 +16,6 @@ use pckt_schema::{Claim, PacketActionUnion, PacketData, PacketWitness};
 ckb_std::entry!(program_entry);
 default_alloc!();
 
-const MAX_SLOTS: u8 = 64;
 const MAX_MESSAGE_LEN: usize = 256;
 const VERSION: u8 = 1;
 const BLAKE_PERSONAL: &[u8] = b"ckb-default-hash";
@@ -402,7 +401,7 @@ fn enforce_invariants(pd: &PacketData) -> Result<(), Error> {
     }
 
     let slots_total = byte_to_u8(pd.slots_total());
-    if slots_total == 0 || slots_total > MAX_SLOTS {
+    if slots_total == 0 {
         return Err(Error::BadSlots);
     }
 

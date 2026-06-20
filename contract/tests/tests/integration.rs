@@ -466,6 +466,66 @@ fn rejects_bad_version() {
 }
 
 #[test]
+fn accepts_max_byte_sized_slot_count() {
+    let mut env = TestEnv::new();
+    let owner = env.always_script();
+    let owner_hash = script_hash_bytes(&owner);
+
+    let salt = [0x5au8; 16];
+    let expiry = 1_700_000_000u64;
+    let pd = PdBuilder {
+        version: 1,
+        packet_type: 0,
+        slots_total: u8::MAX,
+        slots_claimed: 0,
+        expiry,
+        unlock_time: 0,
+        initial_capacity: 255_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey: [0u8; 33],
+        salt,
+        ..Default::default()
+    }
+    .build();
+
+    let pckt = env.pckt_script(salt);
+    let packet_input = CellInput::new_builder()
+        .previous_output(
+            env.ctx.create_cell(
+                CellOutput::new_builder()
+                    .capacity(300_000_000_000u64.pack())
+                    .lock(pckt)
+                    .build(),
+                pd.as_bytes(),
+            ),
+        )
+        .since((SINCE_FLAG_ABS_TS | (expiry + 1)).pack())
+        .build();
+
+    let owner_input = CellInput::new_builder()
+        .previous_output(
+            env.ctx.create_cell(
+                CellOutput::new_builder()
+                    .capacity(10_000_000_000u64.pack())
+                    .lock(owner)
+                    .build(),
+                Bytes::new(),
+            ),
+        )
+        .build();
+
+    let witness = reclaim_witness_bytes();
+    let tx = TransactionBuilder::default()
+        .input(packet_input)
+        .input(owner_input)
+        .witness(witness.pack())
+        .witness(Bytes::new().pack())
+        .build();
+    let tx = env.ctx.complete_tx(tx);
+    env.ctx.verify_tx(&tx, MAX_CYCLES).unwrap();
+}
+
+#[test]
 fn rejects_claim_with_unsignable_pubkey() {
     let mut env = TestEnv::new();
     let owner = env.always_script();

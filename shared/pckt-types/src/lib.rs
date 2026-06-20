@@ -187,7 +187,7 @@ pub const PACKET_STATE_VERSION: u8 = 1;
 pub const SLOT_FLOOR_SHANNONS: u64 = 7_000_000_000;
 pub const MIN_SLOT_SHANNONS: u64 = 100_000_000;
 pub const MAX_MESSAGE_LEN: usize = 256;
-pub const MAX_SLOTS: u8 = 64;
+pub const MAX_SLOTS: u8 = u8::MAX;
 
 #[cfg(test)]
 mod tests {
