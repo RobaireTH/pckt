@@ -17,6 +17,8 @@ import {
 } from './molecule';
 
 const SHANNONS = 100_000_000n;
+export const MIN_PACKET_SLOTS = 1;
+export const MAX_PACKET_SLOTS = 255;
 export const MIN_CLAIM_CELL_SHANNONS = 63_000_000_000n;
 export const SAFE_SLOT_PAYOUT_SHANNONS = 70_000_000_000n;
 

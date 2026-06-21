@@ -21,8 +21,10 @@ import {
   fetchCkbPrice,
   fetchPackets,
   fetchSenderProfile,
+  packetEventsUrl,
   saveSenderProfile,
   type ClaimedPacket,
+  type PacketStreamEvent,
   type PacketSummary,
   type SenderProfile,
 } from './api';
@@ -127,6 +129,25 @@ export function App() {
       window.clearInterval(id);
     };
   }, [lockHash, route, refreshNonce]);
+
+  useEffect(() => {
+    if (!lockHash) return;
+    const events = new EventSource(packetEventsUrl(lockHash));
+    const refreshForWalletEvent = (ev: MessageEvent<string>) => {
+      try {
+        const msg = JSON.parse(ev.data) as PacketStreamEvent;
+        if (msg.owner_lock_hash === lockHash || msg.claimer_lock_hash === lockHash) {
+          setRefreshNonce(v => v + 1);
+        }
+      } catch {
+        setRefreshNonce(v => v + 1);
+      }
+    };
+    events.addEventListener('seal', refreshForWalletEvent);
+    events.addEventListener('claim', refreshForWalletEvent);
+    events.addEventListener('reclaim', refreshForWalletEvent);
+    return () => events.close();
+  }, [lockHash]);
 
   const { feed, unreadCount, markAllRead, clearAll } = useNotifications({
     sentPackets,

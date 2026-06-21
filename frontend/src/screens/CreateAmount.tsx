@@ -4,11 +4,18 @@ import { IconBtn } from '../components/ui/IconBtn';
 import { Packet } from '../components/Packet';
 import { useWallet } from '../hooks/useWallet';
 import { formatDateTime } from '../locale';
-import { SAFE_SLOT_PAYOUT_SHANNONS, minimumFixedPacketAmount, packetFloor, toCkb } from '../packets';
+import {
+  MAX_PACKET_SLOTS,
+  MIN_PACKET_SLOTS,
+  SAFE_SLOT_PAYOUT_SHANNONS,
+  minimumFixedPacketAmount,
+  packetFloor,
+  toCkb,
+} from '../packets';
 import { PacketType } from './CreateType';
 
 const amountPresets = ['14000', '18888', '28888', '58888', '88888'];
-const slotPresets = [5, 10, 20, 50];
+const slotPresets = [5, 10, 20, 50, 100, 255];
 const messagePresets = [
   { label: 'Fold · Seal · Send', full: 'Fold · Seal · Send' },
   { label: 'With gratitude', full: 'With gratitude' },
@@ -70,13 +77,16 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
   const walletBalanceCkb = balance ? toCkb(balance) : null;
   const L = labels[type];
   const fixedTooSmall = amountShannons > 0n && amountShannons < minimumFixedPacketAmount(slots);
-  const validationMessage = fixedTooSmall
-    ? `This packet needs at least ${minFixedTotalCkb.toLocaleString(undefined, {
-        maximumFractionDigits: 2,
-      })} CKB total so each claim is at least ${minPerSlotCkb.toLocaleString(undefined, {
-        maximumFractionDigits: 2,
-      })} CKB.`
-    : null;
+  const slotCountInvalid = !Number.isInteger(slots) || slots < MIN_PACKET_SLOTS || slots > MAX_PACKET_SLOTS;
+  const validationMessage = slotCountInvalid
+    ? `Recipient count must be between ${MIN_PACKET_SLOTS} and ${MAX_PACKET_SLOTS}.`
+    : fixedTooSmall
+      ? `This packet needs at least ${minFixedTotalCkb.toLocaleString(undefined, {
+          maximumFractionDigits: 2,
+        })} CKB total so each claim is at least ${minPerSlotCkb.toLocaleString(undefined, {
+          maximumFractionDigits: 2,
+        })} CKB.`
+      : null;
   const canReview = numAmount > 0 && !validationMessage;
 
   return (
@@ -287,8 +297,8 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
             </div>
             <input
               type="range"
-              min={2}
-              max={50}
+              min={MIN_PACKET_SLOTS}
+              max={MAX_PACKET_SLOTS}
               value={slots}
               onChange={e => onPatch({ slots: Number(e.target.value) })}
               style={{ width: '100%', accentColor: 'var(--crimson-600)' }}
@@ -303,8 +313,8 @@ export function CreateAmount({ draft, onPatch, onBack, onReview, onClose }: Prop
                 marginTop: 4,
               }}
             >
-              <span>2</span>
-              <span>50</span>
+              <span>{MIN_PACKET_SLOTS}</span>
+              <span>{MAX_PACKET_SLOTS}</span>
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
               {slotPresets.map(n => (

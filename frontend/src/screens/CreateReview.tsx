@@ -8,6 +8,8 @@ import { useWallet } from '../hooks/useWallet';
 import { friendlyError, type FriendlyError } from '../errors';
 import { formatDateTime } from '../locale';
 import {
+  MAX_PACKET_SLOTS,
+  MIN_PACKET_SLOTS,
   SAFE_SLOT_PAYOUT_SHANNONS,
   minimumFixedPacketAmount,
   packetFloor,
@@ -41,13 +43,16 @@ export function CreateReview({ draft, onBack, onSeal, onClose }: Props) {
   const walletBalanceCkb = balance ? toCkb(balance) : null;
   const fixedTooSmall =
     amountShannons > 0n && amountShannons < minimumFixedPacketAmount(slots);
-  const validationMessage = fixedTooSmall
-    ? `This packet needs at least ${minFixedTotalCkb.toLocaleString(undefined, {
-        maximumFractionDigits: 2,
-      })} CKB total so each claim is at least ${minPerSlotCkb.toLocaleString(undefined, {
-        maximumFractionDigits: 2,
-      })} CKB.`
-    : null;
+  const slotCountInvalid = !Number.isInteger(slots) || slots < MIN_PACKET_SLOTS || slots > MAX_PACKET_SLOTS;
+  const validationMessage = slotCountInvalid
+    ? `Recipient count must be between ${MIN_PACKET_SLOTS} and ${MAX_PACKET_SLOTS}.`
+    : fixedTooSmall
+      ? `This packet needs at least ${minFixedTotalCkb.toLocaleString(undefined, {
+          maximumFractionDigits: 2,
+        })} CKB total so each claim is at least ${minPerSlotCkb.toLocaleString(undefined, {
+          maximumFractionDigits: 2,
+        })} CKB.`
+      : null;
 
   const rows: Array<{ label: string; value: string; mono?: boolean }> = [
     { label: 'Type', value: typeLabel },

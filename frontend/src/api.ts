@@ -27,6 +27,12 @@ export type PacketEvent = {
   slot_amount: string | null;
 };
 
+export type PacketStreamEvent = PacketEvent & {
+  out_point: string;
+  owner_lock_hash: string | null;
+  claim_pubkey_hash: string | null;
+};
+
 export type ClaimedPacket = PacketSummary & {
   claim_tx_hash: string;
   claim_ts: number;
@@ -91,6 +97,11 @@ export function fetchPacketByPubkey(hash: string): Promise<PacketSummary> {
 
 export function fetchClaimedPackets(claimerLockHash: string): Promise<ClaimedPacket[]> {
   return get(`/v1/packets/claimed?claimer=${encodeURIComponent(claimerLockHash)}`);
+}
+
+export function packetEventsUrl(walletLockHash?: string): string {
+  const q = walletLockHash ? `?wallet=${encodeURIComponent(walletLockHash)}` : '';
+  return `${BACKEND_URL}/v1/events/stream${q}`;
 }
 
 export function fetchSenderProfile(ownerLockHash: string): Promise<SenderProfile> {

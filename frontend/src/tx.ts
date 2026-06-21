@@ -22,7 +22,7 @@ import {
   maxFloor,
   type PacketData,
 } from './molecule';
-import { predictClaimPayout, toBigInt } from './packets';
+import { MAX_PACKET_SLOTS, MIN_PACKET_SLOTS, predictClaimPayout, toBigInt } from './packets';
 import type { Draft } from './screens/CreateAmount';
 
 const SHANNONS = 100_000_000n;
@@ -93,6 +93,12 @@ function toRpcHex(value: bigint | number | string) {
   return `0x${BigInt(value).toString(16)}`;
 }
 
+function assertValidSlots(slots: number) {
+  if (!Number.isInteger(slots) || slots < MIN_PACKET_SLOTS || slots > MAX_PACKET_SLOTS) {
+    throw new Error(`Recipient count must be between ${MIN_PACKET_SLOTS} and ${MAX_PACKET_SLOTS}`);
+  }
+}
+
 export async function buildAndRelaySealTx(params: {
   draft: Draft;
   signer: Signer;
@@ -104,6 +110,7 @@ export async function buildAndRelaySealTx(params: {
   const claimPubkey = hexFrom(claimPk);
   const claimPubkeyHash = hashCkb(claimPk).slice(0, 42) as Hex;
   const salt = hexFrom(crypto.getRandomValues(new Uint8Array(16)));
+  assertValidSlots(draft.slots);
   const amountCkb = BigInt(draft.amount || '0');
   const initialCapacity = amountCkb * SHANNONS;
   const reservedFloor = maxFloor(draft.slots, new TextEncoder().encode(draft.message).length);
@@ -218,12 +225,12 @@ export async function buildAndRelayClaimTx(params: {
     depType: 'code',
     outPoint: { txHash: PCKT_LOCK.txHash, index: PCKT_LOCK.index },
   });
-  await tx.completeFeeBy(signer);
 
   const msg = hashCkb(OutPoint.from(op).toBytes(), bytesFrom(claimerLockHash));
   const sig = secp256k1.sign(bytesFrom(msg), decodePk(claimPrivateKey));
   const sigHex = hexFrom(bytesConcat(sig.toCompactRawBytes(), Uint8Array.from([sig.recovery ?? 0])));
   tx.setWitnessArgsAt(0, WitnessArgs.from({ lock: encodeClaimWitness(sigHex, claimerLockHash) }));
+  await tx.completeFeeBy(signer);
 
   const signed = await signer.signTransaction(tx);
   const signedJson = toRpcTransaction(signed);
