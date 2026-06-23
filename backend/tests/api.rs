@@ -8,7 +8,7 @@ use http_body_util::BodyExt;
 use pckt_backend::{
     bus::PacketEventMsg,
     config::{Config, Network, PacketLock},
-    crypto::{hex_str, script_hash},
+    crypto::{blake160, hex_str, script_hash},
     db, routes,
     state::AppState,
 };
@@ -289,6 +289,46 @@ async fn packets_list_collapses_successor_versions() {
 }
 
 #[tokio::test]
+async fn by_pubkey_returns_latest_successor_when_sealed_at_ties() {
+    let state = build_state().await;
+
+    sqlx::query(
+        r#"
+        INSERT INTO packets (
+            out_point, packet_type, slots_total, slots_claimed,
+            initial_capacity, current_capacity, expiry, unlock_time,
+            owner_lock_hash, claim_pubkey_hash, salt, message_hash,
+            message_body, sealed_at, last_seen_block
+        ) VALUES
+            ('0xnewer:0', 0, 10, 1, '15000000000000', '13558000000000', 1000, 0, '0xowner', '0xpub', x'01', x'01', 'gm', 100, 11),
+            ('0xolder:0', 0, 10, 0, '15000000000000', '15058000000000', 1000, 0, '0xowner', '0xpub', x'01', x'01', 'gm', 100, 10)
+        "#
+    )
+    .execute(&state.db)
+    .await
+    .unwrap();
+
+    let app = routes::router(&state).with_state(state);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/packets/by-pubkey/0xpub")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_string(resp).await;
+    assert!(
+        body.contains("\"out_point\":\"0xnewer:0\""),
+        "body = {body}"
+    );
+    assert!(body.contains("\"slots_claimed\":1"), "body = {body}");
+}
+
+#[tokio::test]
 async fn missing_packet_404() {
     let app = build_app().await;
     let resp = app
@@ -343,8 +383,9 @@ async fn shortlink_create_and_redirect() {
 #[tokio::test]
 async fn messages_store_and_fetch() {
     let app = build_app().await;
-    let hash = format!("0x{}", "ab".repeat(20));
-    let payload = format!(r#"{{"message_hash":"{hash}","body":"hello world"}}"#);
+    let body = "hello world";
+    let hash = hex_str(&blake160(body.as_bytes()));
+    let payload = format!(r#"{{"message_hash":"{hash}","body":"{body}"}}"#);
 
     let store = app
         .clone()

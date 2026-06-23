@@ -276,7 +276,7 @@ pub async fn by_pubkey(
 ) -> ApiResult<Json<PacketSummary>> {
     let sql = format!(
         "{SELECT_SUMMARY} WHERE claim_pubkey_hash = ?1 \
-         ORDER BY sealed_at DESC LIMIT 1"
+         ORDER BY last_seen_block DESC, packets.rowid DESC LIMIT 1"
     );
     let row: SummaryRow = sqlx::query_as(&sql)
         .bind(&hash)
