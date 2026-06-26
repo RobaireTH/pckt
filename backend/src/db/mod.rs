@@ -1,4 +1,5 @@
 pub mod blocks;
+pub mod claim_badges;
 pub mod cursor;
 pub mod packets;
 pub mod profiles;
