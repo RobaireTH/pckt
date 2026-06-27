@@ -13,6 +13,7 @@ use crate::{
         self,
         packets::{PacketRow, PacketSnapshot},
     },
+    indexer::claim::claimer_from_witness_args,
     state::AppState,
 };
 
@@ -39,6 +40,11 @@ struct NewPacket {
 struct Predecessor {
     out_point: String,
     snapshot: PacketSnapshot,
+}
+
+struct ClaimBadgeOutput {
+    out_point: String,
+    metadata_json: String,
 }
 
 impl Indexer {
@@ -268,6 +274,7 @@ impl Indexer {
         let predecessors = self.collect_predecessors(tx).await?;
         let mut new_packets = self.collect_new_packets(tx, tx_hash);
         let output_locks = self.collect_output_locks(tx);
+        let witness_claimer = claim_claimer_from_tx(tx);
 
         for pred in predecessors {
             let succ_idx = new_packets
@@ -276,7 +283,10 @@ impl Indexer {
             match succ_idx {
                 Some(idx) => {
                     let succ = new_packets.remove(idx);
-                    let claimer = pick_claimer(&output_locks, &pred.snapshot.owner_lock_hash);
+                    let amount = delta_string(&pred, &succ);
+                    let claimer = witness_claimer
+                        .clone()
+                        .or_else(|| pick_claimer(&output_locks, &pred.snapshot.owner_lock_hash));
                     self.handle_partial_claim(
                         &pred,
                         &succ,
@@ -286,6 +296,10 @@ impl Indexer {
                         ts,
                     )
                     .await?;
+                    if let Some(claimer) = claimer.as_deref() {
+                        self.record_claim_badge(tx, tx_hash, number, ts, &pred, claimer, &amount)
+                            .await?;
+                    }
                 }
                 None => {
                     let owns_output = output_locks
@@ -295,7 +309,9 @@ impl Indexer {
                     let claimer = if is_reclaim {
                         None
                     } else {
-                        pick_claimer(&output_locks, &pred.snapshot.owner_lock_hash)
+                        witness_claimer
+                            .clone()
+                            .or_else(|| pick_claimer(&output_locks, &pred.snapshot.owner_lock_hash))
                     };
                     self.handle_terminal(
                         &pred,
@@ -306,6 +322,15 @@ impl Indexer {
                         ts,
                     )
                     .await?;
+                    if !is_reclaim {
+                        if let Some(claimer) = claimer.as_deref() {
+                            let amount = pred.snapshot.current_capacity.to_string();
+                            self.record_claim_badge(
+                                tx, tx_hash, number, ts, &pred, claimer, &amount,
+                            )
+                            .await?;
+                        }
+                    }
                 }
             }
         }
@@ -431,6 +456,94 @@ impl Indexer {
                 Some(hex_str(&script_hash(&code_arr, hash_type, &args)))
             })
             .collect()
+    }
+
+    fn collect_claim_badges(&self, tx: &Value, tx_hash: &str) -> Vec<ClaimBadgeOutput> {
+        let outputs = tx
+            .get("outputs")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let outputs_data = tx
+            .get("outputs_data")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let want_packet = self.state.config.packet_lock.code_hash.as_str();
+        let want_packet_hash_type = self.state.config.packet_lock.hash_type.as_str();
+
+        let mut out = Vec::new();
+        for (idx, output) in outputs.iter().enumerate() {
+            let lock = match output.get("lock") {
+                Some(lock) => lock,
+                None => continue,
+            };
+            let lock_code = lock.get("code_hash").and_then(Value::as_str).unwrap_or("");
+            let lock_hash_type = lock.get("hash_type").and_then(Value::as_str).unwrap_or("");
+            if lock_code == want_packet && lock_hash_type == want_packet_hash_type {
+                continue;
+            }
+            if output.get("type").is_none_or(Value::is_null) {
+                continue;
+            }
+            let raw = match outputs_data.get(idx).and_then(Value::as_str) {
+                Some(s) => s,
+                None => continue,
+            };
+            let bytes = match decode_hex(raw) {
+                Some(bytes) => bytes,
+                None => continue,
+            };
+            let metadata_json = match String::from_utf8(bytes) {
+                Ok(s)
+                    if s.contains("\"protocol\":\"ckb-pop\"")
+                        && s.contains("\"proof_type\":\"pckt-claim\"") =>
+                {
+                    s
+                }
+                _ => continue,
+            };
+            out.push(ClaimBadgeOutput {
+                out_point: format!("{tx_hash}:{idx}"),
+                metadata_json,
+            });
+        }
+        out
+    }
+
+    async fn record_claim_badge(
+        &self,
+        tx: &Value,
+        tx_hash: &str,
+        number: u64,
+        ts: u64,
+        pred: &Predecessor,
+        claimer: &str,
+        amount: &str,
+    ) -> anyhow::Result<()> {
+        let Some(badge) = self.collect_claim_badges(tx, tx_hash).into_iter().next() else {
+            return Ok(());
+        };
+        let scope_id = format!("pckt:{}", pred.snapshot.claim_pubkey_hash);
+        db::claim_badges::record(
+            &self.state.db,
+            db::claim_badges::ClaimBadgeRow {
+                out_point: &badge.out_point,
+                packet_out_point: &pred.out_point,
+                claim_tx_hash: tx_hash,
+                block_number: number,
+                ts,
+                owner_lock_hash: &pred.snapshot.owner_lock_hash,
+                claimer_lock_hash: claimer,
+                claim_pubkey_hash: &pred.snapshot.claim_pubkey_hash,
+                scope_id: &scope_id,
+                slot_index: pred.snapshot.slots_claimed.saturating_add(1),
+                slot_amount: Some(amount),
+                metadata_json: &badge.metadata_json,
+            },
+        )
+        .await?;
+        Ok(())
     }
 
     async fn handle_seal(
@@ -579,6 +692,23 @@ impl Indexer {
         );
         Ok(())
     }
+}
+
+fn claim_claimer_from_tx(tx: &Value) -> Option<String> {
+    let witness = tx
+        .get("witnesses")
+        .and_then(Value::as_array)
+        .and_then(|w| w.first())
+        .and_then(Value::as_str)?;
+    let bytes = decode_hex(witness)?;
+    claimer_from_witness_args(&bytes).ok()
+}
+
+fn delta_string(pred: &Predecessor, succ: &NewPacket) -> String {
+    pred.snapshot
+        .current_capacity
+        .saturating_sub(succ.capacity)
+        .to_string()
 }
 
 fn pick_claimer(output_locks: &[String], owner_lock_hash: &str) -> Option<String> {

@@ -106,6 +106,9 @@ pub struct ClaimedPacket {
     pub claim_tx_hash: String,
     pub claim_ts: u64,
     pub slot_amount: Option<String>,
+    pub badge_out_point: Option<String>,
+    pub badge_scope_id: Option<String>,
+    pub badge_metadata_json: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -128,6 +131,9 @@ struct ClaimedRow {
     claim_tx_hash: String,
     claim_ts: i64,
     slot_amount: Option<String>,
+    badge_out_point: Option<String>,
+    badge_scope_id: Option<String>,
+    badge_metadata_json: Option<String>,
 }
 
 fn row_to_summary(r: SummaryRow) -> PacketSummary {
@@ -225,11 +231,18 @@ pub async fn claimed(
                p.owner_lock_hash, p.claim_pubkey_hash, p.salt, p.message_body, p.sealed_at,
                sender_profiles.sender_address AS owner_address,
                sender_profiles.username AS owner_name,
-               e.tx_hash AS claim_tx_hash, e.ts AS claim_ts, e.slot_amount
+               e.tx_hash AS claim_tx_hash, e.ts AS claim_ts, e.slot_amount,
+               claim_badges.out_point AS badge_out_point,
+               claim_badges.scope_id AS badge_scope_id,
+               claim_badges.metadata_json AS badge_metadata_json
         FROM packets p
         LEFT JOIN sender_profiles
           ON sender_profiles.owner_lock_hash = p.owner_lock_hash
         JOIN packet_events e ON e.out_point = p.out_point
+        LEFT JOIN claim_badges
+          ON claim_badges.packet_out_point = e.out_point
+         AND claim_badges.claim_tx_hash = e.tx_hash
+         AND claim_badges.claimer_lock_hash = e.claimer_lock_hash
         WHERE e.event_type = 'claim'
           AND e.claimer_lock_hash = ?1
         ORDER BY e.ts DESC, e.id DESC
@@ -265,6 +278,9 @@ pub async fn claimed(
                 claim_tx_hash: r.claim_tx_hash,
                 claim_ts: r.claim_ts as u64,
                 slot_amount: r.slot_amount,
+                badge_out_point: r.badge_out_point,
+                badge_scope_id: r.badge_scope_id,
+                badge_metadata_json: r.badge_metadata_json,
             })
             .collect(),
     ))

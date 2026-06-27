@@ -225,6 +225,23 @@ async fn claimed_packets_list_filters_by_claimer() {
     .await
     .unwrap();
 
+    sqlx::query(
+        r#"
+        INSERT INTO claim_badges (
+            out_point, packet_out_point, claim_tx_hash, block_number, ts,
+            owner_lock_hash, claimer_lock_hash, claim_pubkey_hash, scope_id,
+            slot_index, slot_amount, metadata_json
+        ) VALUES (
+            '0xbadge:2', '0xaaa:0', '0xtx1', 10, 100,
+            '0xowner-a', '0xclaimer', '0xpub-a', 'pckt:0xpub-a',
+            1, '20', '{"protocol":"ckb-pop","proof_type":"pckt-claim"}'
+        )
+        "#,
+    )
+    .execute(&state.db)
+    .await
+    .unwrap();
+
     let app = routes::router(&state).with_state(state);
     let resp = app
         .oneshot(
@@ -241,6 +258,14 @@ async fn claimed_packets_list_filters_by_claimer() {
     assert!(body.contains("\"out_point\":\"0xaaa:0\""), "body = {body}");
     assert!(body.contains("\"message_body\":\"hello\""), "body = {body}");
     assert!(body.contains("\"slot_amount\":\"20\""), "body = {body}");
+    assert!(
+        body.contains("\"badge_out_point\":\"0xbadge:2\""),
+        "body = {body}"
+    );
+    assert!(
+        body.contains("\"badge_scope_id\":\"pckt:0xpub-a\""),
+        "body = {body}"
+    );
     assert!(!body.contains("\"out_point\":\"0xbbb:0\""), "body = {body}");
 }
 
