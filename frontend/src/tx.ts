@@ -13,6 +13,7 @@ import {
 } from '@ckb-ccc/connector-react';
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { createShortlink, relayTransaction } from './api';
+import { buildClaimBadgeMetadata, buildClaimBadgeOutput } from './claimBadge';
 import { PCKT_LOCK } from './config';
 import {
   decodePacketData,
@@ -38,6 +39,10 @@ function parseOutPoint(outPoint: string): { txHash: Hex; index: bigint } {
 
 function decodePk(hex: string): Uint8Array {
   return bytesFrom(hex.startsWith('0x') ? hex : `0x${hex}`);
+}
+
+function blake160Hex(bytes: Uint8Array): Hex {
+  return hashCkb(bytes).slice(0, 42) as Hex;
 }
 
 function pktType(t: Draft['type']) {
@@ -108,7 +113,7 @@ export async function buildAndRelaySealTx(params: {
   const claimSk = secp256k1.utils.randomPrivateKey();
   const claimPk = secp256k1.getPublicKey(claimSk, true);
   const claimPubkey = hexFrom(claimPk);
-  const claimPubkeyHash = hashCkb(claimPk).slice(0, 42) as Hex;
+  const claimPubkeyHash = blake160Hex(claimPk);
   const salt = hexFrom(crypto.getRandomValues(new Uint8Array(16)));
   assertValidSlots(draft.slots);
   const amountCkb = BigInt(draft.amount || '0');
@@ -163,7 +168,7 @@ export async function buildAndRelayClaimTx(params: {
   outPoint: string;
   signer: Signer;
   claimPrivateKey: string;
-}): Promise<{ txHash: string; payout: bigint }> {
+}): Promise<{ txHash: string; payout: bigint; badgeMinted: boolean }> {
   const { outPoint, signer, claimPrivateKey } = params;
   const op = parseOutPoint(outPoint);
   const packetCell = await signer.client.getCellLive(op, true, true);
@@ -221,6 +226,24 @@ export async function buildAndRelayClaimTx(params: {
     tx.outputsData[1] = d0;
   }
 
+  const badge = buildClaimBadgeOutput({
+    ownerLock: claimer.script,
+    packetOutPoint: outPoint,
+    claimerLockHash,
+    metadata: buildClaimBadgeMetadata({
+      packetOutPoint: outPoint,
+      claimPubkeyHash: blake160Hex(bytesFrom(pd.claim_pubkey)),
+      ownerLockHash: String(pd.owner_lock_hash),
+      claimerLockHash,
+      slotIndex: claimed + 1,
+      slotAmount: payout,
+    }),
+  });
+  if (badge) {
+    tx.addOutput(badge.output, badge.data);
+    tx.addCellDeps(badge.cellDep);
+  }
+
   tx.addCellDeps({
     depType: 'code',
     outPoint: { txHash: PCKT_LOCK.txHash, index: PCKT_LOCK.index },
@@ -235,7 +258,7 @@ export async function buildAndRelayClaimTx(params: {
   const signed = await signer.signTransaction(tx);
   const signedJson = toRpcTransaction(signed);
   const { tx_hash } = await relayTransaction(signedJson);
-  return { txHash: tx_hash, payout };
+  return { txHash: tx_hash, payout, badgeMinted: Boolean(badge) };
 }
 
 export async function buildAndRelayReclaimTx(params: {

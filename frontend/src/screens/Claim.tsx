@@ -26,6 +26,7 @@ export function Claim({ onOpen, outPoint }: Props) {
   const [claiming, setClaiming] = useState(false);
   const [payout, setPayout] = useState<bigint | null>(null);
   const [claimTxHash, setClaimTxHash] = useState<string | null>(null);
+  const [badgeMinted, setBadgeMinted] = useState(false);
   const { signer, wallet, lockScript, lockHash, openConnect } = useWallet();
 
   const h = window.location.hash.replace(/^#\/?/, '');
@@ -119,6 +120,7 @@ export function Claim({ onOpen, outPoint }: Props) {
       });
       setPayout(result.payout);
       setClaimTxHash(result.txHash);
+      setBadgeMinted(result.badgeMinted);
       setOpened(true);
     } catch (e) {
       setError(friendlyError(e, 'claim'));
@@ -228,7 +230,9 @@ export function Claim({ onOpen, outPoint }: Props) {
                 textAlign: 'center',
               }}
             >
-              Settled to your wallet.
+              {badgeMinted
+                ? 'Settled to your wallet with a PCKT claim receipt.'
+                : 'Settled to your wallet.'}
             </div>
             {claimTxHash && (
               <a

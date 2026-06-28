@@ -13,3 +13,16 @@ export const PCKT_LOCK = {
   txHash: import.meta.env.VITE_PCKT_LOCK_TX_HASH as string,
   index: Number(import.meta.env.VITE_PCKT_LOCK_INDEX ?? '0'),
 };
+
+export const CLAIM_BADGE = {
+  enabled: import.meta.env.VITE_CLAIM_BADGE_ENABLED === 'true',
+  codeHash: import.meta.env.VITE_CLAIM_BADGE_CODE_HASH as string | undefined,
+  hashType: (import.meta.env.VITE_CLAIM_BADGE_HASH_TYPE ?? 'type') as
+    | 'data'
+    | 'data1'
+    | 'data2'
+    | 'type',
+  txHash: import.meta.env.VITE_CLAIM_BADGE_TX_HASH as string | undefined,
+  index: Number(import.meta.env.VITE_CLAIM_BADGE_INDEX ?? '0'),
+  capacity: BigInt(import.meta.env.VITE_CLAIM_BADGE_CAPACITY_SHANNONS ?? '10000000000'),
+};

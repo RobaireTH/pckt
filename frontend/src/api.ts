@@ -37,6 +37,9 @@ export type ClaimedPacket = PacketSummary & {
   claim_tx_hash: string;
   claim_ts: number;
   slot_amount: string | null;
+  badge_out_point?: string | null;
+  badge_scope_id?: string | null;
+  badge_metadata_json?: string | null;
 };
 
 export type SenderProfile = {
