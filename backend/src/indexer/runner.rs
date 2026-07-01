@@ -47,6 +47,16 @@ struct ClaimBadgeOutput {
     metadata_json: String,
 }
 
+struct ClaimBadgeRecord<'a> {
+    tx: &'a Value,
+    tx_hash: &'a str,
+    block_number: u64,
+    ts: u64,
+    pred: &'a Predecessor,
+    claimer: &'a str,
+    amount: &'a str,
+}
+
 impl Indexer {
     pub fn new(state: AppState) -> Self {
         let rpc = CkbRpc::new(state.config.ckb_rpc_url.clone());
@@ -297,8 +307,16 @@ impl Indexer {
                     )
                     .await?;
                     if let Some(claimer) = claimer.as_deref() {
-                        self.record_claim_badge(tx, tx_hash, number, ts, &pred, claimer, &amount)
-                            .await?;
+                        self.record_claim_badge(ClaimBadgeRecord {
+                            tx,
+                            tx_hash,
+                            block_number: number,
+                            ts,
+                            pred: &pred,
+                            claimer,
+                            amount: &amount,
+                        })
+                        .await?;
                     }
                 }
                 None => {
@@ -325,9 +343,15 @@ impl Indexer {
                     if !is_reclaim {
                         if let Some(claimer) = claimer.as_deref() {
                             let amount = pred.snapshot.current_capacity.to_string();
-                            self.record_claim_badge(
-                                tx, tx_hash, number, ts, &pred, claimer, &amount,
-                            )
+                            self.record_claim_badge(ClaimBadgeRecord {
+                                tx,
+                                tx_hash,
+                                block_number: number,
+                                ts,
+                                pred: &pred,
+                                claimer,
+                                amount: &amount,
+                            })
                             .await?;
                         }
                     }
@@ -511,34 +535,29 @@ impl Indexer {
         out
     }
 
-    async fn record_claim_badge(
-        &self,
-        tx: &Value,
-        tx_hash: &str,
-        number: u64,
-        ts: u64,
-        pred: &Predecessor,
-        claimer: &str,
-        amount: &str,
-    ) -> anyhow::Result<()> {
-        let Some(badge) = self.collect_claim_badges(tx, tx_hash).into_iter().next() else {
+    async fn record_claim_badge(&self, record: ClaimBadgeRecord<'_>) -> anyhow::Result<()> {
+        let Some(badge) = self
+            .collect_claim_badges(record.tx, record.tx_hash)
+            .into_iter()
+            .next()
+        else {
             return Ok(());
         };
-        let scope_id = format!("pckt:{}", pred.snapshot.claim_pubkey_hash);
+        let scope_id = format!("pckt:{}", record.pred.snapshot.claim_pubkey_hash);
         db::claim_badges::record(
             &self.state.db,
             db::claim_badges::ClaimBadgeRow {
                 out_point: &badge.out_point,
-                packet_out_point: &pred.out_point,
-                claim_tx_hash: tx_hash,
-                block_number: number,
-                ts,
-                owner_lock_hash: &pred.snapshot.owner_lock_hash,
-                claimer_lock_hash: claimer,
-                claim_pubkey_hash: &pred.snapshot.claim_pubkey_hash,
+                packet_out_point: &record.pred.out_point,
+                claim_tx_hash: record.tx_hash,
+                block_number: record.block_number,
+                ts: record.ts,
+                owner_lock_hash: &record.pred.snapshot.owner_lock_hash,
+                claimer_lock_hash: record.claimer,
+                claim_pubkey_hash: &record.pred.snapshot.claim_pubkey_hash,
                 scope_id: &scope_id,
-                slot_index: pred.snapshot.slots_claimed.saturating_add(1),
-                slot_amount: Some(amount),
+                slot_index: record.pred.snapshot.slots_claimed.saturating_add(1),
+                slot_amount: Some(record.amount),
                 metadata_json: &badge.metadata_json,
             },
         )
