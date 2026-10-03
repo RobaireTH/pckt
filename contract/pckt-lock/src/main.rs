@@ -30,6 +30,9 @@ const PD_FIXED_BYTES: u64 = 169;
 const PD_HEADER_BYTES: u64 = 52;
 const CELL_OVERHEAD_BYTES: u64 = 57;
 
+// Claimers may pay the transaction fee out of their payout, up to this amount.
+const MAX_CLAIM_FEE_SHANNONS: u64 = 1_000_000;
+
 #[repr(i8)]
 enum Error {
     NoInput = 10,
@@ -108,7 +111,7 @@ fn verify_recipient(claim: &Claim, payout: u64) -> Result<(), Error> {
             continue;
         }
         let cap = load_cell_capacity(idx, Source::Output).map_err(|_| Error::CapacityLoadFailed)?;
-        if cap != payout {
+        if cap > payout || cap < payout.saturating_sub(MAX_CLAIM_FEE_SHANNONS) {
             continue;
         }
         let type_opt =
