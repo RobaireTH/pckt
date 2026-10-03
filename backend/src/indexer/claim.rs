@@ -4,13 +4,28 @@ use pckt_types::schema::{PacketActionUnion, PacketWitness};
 
 use crate::crypto::hex_str;
 
-pub fn claimer_from_witness_args(bytes: &[u8]) -> Result<String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpendAction {
+    Claim { claimer_lock_hash: String },
+    Reclaim,
+}
+
+pub fn spend_action_from_witness_args(bytes: &[u8]) -> Result<SpendAction> {
     let lock = witness_lock_field(bytes).context("missing packet lock witness")?;
     let packet_witness = PacketWitness::from_slice(lock)
         .map_err(|err| anyhow::anyhow!("decode packet witness: {err:?}"))?;
-    match packet_witness.action().to_enum() {
-        PacketActionUnion::Claim(claim) => Ok(hex_str(claim.claimer_lock_hash().as_slice())),
-        PacketActionUnion::Reclaim(_) => anyhow::bail!("packet witness is reclaim"),
+    Ok(match packet_witness.action().to_enum() {
+        PacketActionUnion::Claim(claim) => SpendAction::Claim {
+            claimer_lock_hash: hex_str(claim.claimer_lock_hash().as_slice()),
+        },
+        PacketActionUnion::Reclaim(_) => SpendAction::Reclaim,
+    })
+}
+
+pub fn claimer_from_witness_args(bytes: &[u8]) -> Result<String> {
+    match spend_action_from_witness_args(bytes)? {
+        SpendAction::Claim { claimer_lock_hash } => Ok(claimer_lock_hash),
+        SpendAction::Reclaim => anyhow::bail!("packet witness is reclaim"),
     }
 }
 

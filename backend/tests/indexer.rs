@@ -10,7 +10,7 @@ use serde_json::json;
 use sqlx::sqlite::SqlitePoolOptions;
 
 use molecule::prelude::{Builder, Entity};
-use pckt_types::schema::{Byte32, Byte65, Claim, PacketAction, PacketWitness};
+use pckt_types::schema::{Byte32, Byte65, Claim, PacketAction, PacketWitness, Reclaim};
 
 fn sample_state() -> PacketState {
     PacketState {
@@ -76,6 +76,65 @@ fn claim_witness_args(claimer_lock_hash: [u8; 32]) -> Vec<u8> {
     let action = PacketAction::new_builder().set(claim).build();
     let packet_witness = PacketWitness::new_builder().action(action).build();
     witness_args_with_lock(packet_witness.as_slice())
+}
+
+fn reclaim_witness_args() -> Vec<u8> {
+    let action = PacketAction::new_builder()
+        .set(Reclaim::new_builder().build())
+        .build();
+    let packet_witness = PacketWitness::new_builder().action(action).build();
+    witness_args_with_lock(packet_witness.as_slice())
+}
+
+const OWNER_CODE_HASH: [u8; 32] = [0x99; 32];
+
+fn owner_lock_hash() -> [u8; 32] {
+    script_hash(&OWNER_CODE_HASH, 1, &[0x11])
+}
+
+fn owner_output(capacity: &str) -> serde_json::Value {
+    json!({
+        "capacity": capacity,
+        "lock": { "code_hash": hex_str(&OWNER_CODE_HASH), "hash_type": "type", "args": "0x11" },
+        "type": null
+    })
+}
+
+async fn seed_packet(state: &AppState, out_point: &str, packet: &PacketState) {
+    db::packets::upsert(
+        &state.db,
+        db::packets::PacketRow {
+            out_point,
+            state: packet,
+            current_capacity: 35_000_000_000,
+            sealed_at: 1,
+            block_number: 1,
+        },
+    )
+    .await
+    .unwrap();
+}
+
+async fn events_for(state: &AppState, out_point: &str) -> Vec<(String, Option<String>)> {
+    sqlx::query_as(
+        "SELECT event_type, claimer_lock_hash FROM packet_events WHERE out_point = ?1 ORDER BY id",
+    )
+    .bind(out_point)
+    .fetch_all(&state.db)
+    .await
+    .unwrap()
+}
+
+fn block_with_tx(tx: serde_json::Value) -> serde_json::Value {
+    json!({
+        "header": {
+            "number": "0x2",
+            "hash": "0xblock2",
+            "parent_hash": "0xgenesis",
+            "timestamp": "0x65"
+        },
+        "transactions": [tx]
+    })
 }
 
 fn witness_args_with_lock(lock: &[u8]) -> Vec<u8> {
@@ -409,4 +468,104 @@ async fn indexer_skips_spoofed_seals() {
         indexer.process_block_for_test(2, &block).await.unwrap();
         assert_eq!(sealed_count(&app).await, 0, "{name} must not be indexed");
     }
+}
+
+#[tokio::test]
+async fn indexer_reads_claimer_from_packet_input_witness() {
+    let state = make_state().await;
+    let indexer = Indexer::new(state.clone());
+    let pred = sample_state();
+    seed_packet(&state, "0xprev:0", &pred).await;
+
+    let mut succ = pred.clone();
+    succ.slots_claimed = 1;
+    succ.claimed_locks.push(vec![0x77; 32]);
+
+    let tx = json!({
+        "hash": "0xclaimtx",
+        "inputs": [
+            { "previous_output": { "tx_hash": "0xfunding", "index": "0x0" } },
+            { "previous_output": { "tx_hash": "0xprev", "index": "0x0" } }
+        ],
+        "outputs": [
+            {
+                "capacity": "0x5f5e100",
+                "lock": { "code_hash": hex_str(&[0x55; 32]), "hash_type": "type", "args": "0x55" },
+                "type": null
+            },
+            {
+                "capacity": "0x6d14d9c00",
+                "lock": { "code_hash": "0xpacket", "hash_type": "data1", "args": "0x01" },
+                "type": null
+            }
+        ],
+        "outputs_data": ["0x", hex_str(&succ.encode().unwrap())],
+        "witnesses": ["0x", hex_str(&claim_witness_args([0x77; 32]))]
+    });
+    indexer
+        .process_block_for_test(2, &block_with_tx(tx))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        events_for(&state, "0xprev:0").await,
+        vec![("claim".to_string(), Some(format!("0x{}", "77".repeat(32))))]
+    );
+}
+
+#[tokio::test]
+async fn owner_claiming_last_slot_is_recorded_as_claim() {
+    let state = make_state().await;
+    let indexer = Indexer::new(state.clone());
+    let mut pred = sample_state();
+    pred.owner_lock_hash = owner_lock_hash().to_vec();
+    pred.slots_claimed = 4;
+    seed_packet(&state, "0xprev:0", &pred).await;
+
+    let tx = json!({
+        "hash": "0xlastclaim",
+        "inputs": [{ "previous_output": { "tx_hash": "0xprev", "index": "0x0" } }],
+        "outputs": [owner_output("0x826299e00")],
+        "outputs_data": ["0x"],
+        "witnesses": [hex_str(&claim_witness_args(owner_lock_hash()))]
+    });
+    indexer
+        .process_block_for_test(2, &block_with_tx(tx))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        events_for(&state, "0xprev:0").await,
+        vec![("claim".to_string(), Some(hex_str(&owner_lock_hash())))]
+    );
+}
+
+#[tokio::test]
+async fn reclaim_witness_is_recorded_as_reclaim() {
+    let state = make_state().await;
+    let indexer = Indexer::new(state.clone());
+    let mut pred = sample_state();
+    pred.owner_lock_hash = owner_lock_hash().to_vec();
+    pred.slots_claimed = 2;
+    seed_packet(&state, "0xprev:0", &pred).await;
+
+    let tx = json!({
+        "hash": "0xreclaim",
+        "inputs": [
+            { "previous_output": { "tx_hash": "0xownercell", "index": "0x0" } },
+            { "previous_output": { "tx_hash": "0xprev", "index": "0x0" } }
+        ],
+        "outputs": [owner_output("0x826299e00")],
+        "outputs_data": ["0x"],
+        "witnesses": ["0x", hex_str(&reclaim_witness_args())]
+    });
+    indexer
+        .process_block_for_test(2, &block_with_tx(tx))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        events_for(&state, "0xprev:0").await,
+        vec![("reclaim".to_string(), None)]
+    );
 }

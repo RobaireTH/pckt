@@ -13,7 +13,7 @@ use crate::{
         self,
         packets::{PacketRow, PacketSnapshot},
     },
-    indexer::claim::claimer_from_witness_args,
+    indexer::claim::{spend_action_from_witness_args, SpendAction},
     state::AppState,
 };
 
@@ -47,6 +47,7 @@ struct NewPacket {
 
 struct Predecessor {
     out_point: String,
+    input_index: usize,
     snapshot: PacketSnapshot,
 }
 
@@ -302,9 +303,12 @@ impl Indexer {
         let predecessors = self.collect_predecessors(tx).await?;
         let mut new_packets = self.collect_new_packets(tx, tx_hash);
         let output_locks = self.collect_output_locks(tx);
-        let witness_claimer = claim_claimer_from_tx(tx);
-
         for pred in predecessors {
+            let action = spend_action_at(tx, pred.input_index);
+            let witness_claimer = match &action {
+                Some(SpendAction::Claim { claimer_lock_hash }) => Some(claimer_lock_hash.clone()),
+                _ => None,
+            };
             let succ_idx = new_packets
                 .iter()
                 .position(|np| np.state.salt == pred.snapshot.salt);
@@ -338,10 +342,13 @@ impl Indexer {
                     }
                 }
                 None => {
-                    let owns_output = output_locks
-                        .iter()
-                        .any(|h| h == &pred.snapshot.owner_lock_hash);
-                    let is_reclaim = owns_output;
+                    let is_reclaim = match &action {
+                        Some(SpendAction::Reclaim) => true,
+                        Some(SpendAction::Claim { .. }) => false,
+                        None => output_locks
+                            .iter()
+                            .any(|h| h == &pred.snapshot.owner_lock_hash),
+                    };
                     let claimer = if is_reclaim {
                         None
                     } else {
@@ -394,7 +401,7 @@ impl Indexer {
             .map(Vec::as_slice)
             .unwrap_or(&[]);
         let mut out = Vec::new();
-        for input in inputs {
+        for (input_index, input) in inputs.iter().enumerate() {
             let prev_tx = input
                 .pointer("/previous_output/tx_hash")
                 .and_then(Value::as_str)
@@ -411,6 +418,7 @@ impl Indexer {
             if let Some(snap) = db::packets::snapshot(&self.state.db, &out_point).await? {
                 out.push(Predecessor {
                     out_point,
+                    input_index,
                     snapshot: snap,
                 });
             }
@@ -800,14 +808,14 @@ fn plan_scan(cursor: u64, tip: u64) -> ScanPlan {
     }
 }
 
-fn claim_claimer_from_tx(tx: &Value) -> Option<String> {
+fn spend_action_at(tx: &Value, input_index: usize) -> Option<SpendAction> {
     let witness = tx
         .get("witnesses")
         .and_then(Value::as_array)
-        .and_then(|w| w.first())
+        .and_then(|w| w.get(input_index))
         .and_then(Value::as_str)?;
     let bytes = decode_hex(witness)?;
-    claimer_from_witness_args(&bytes).ok()
+    spend_action_from_witness_args(&bytes).ok()
 }
 
 fn delta_string(pred: &Predecessor, succ: &NewPacket) -> String {
