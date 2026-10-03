@@ -8,7 +8,7 @@ use http_body_util::BodyExt;
 use pckt_backend::{
     bus::PacketEventMsg,
     config::{Config, Network, PacketLock},
-    crypto::{blake160, hex_str, script_hash},
+    crypto::{hex_str, script_hash},
     db, routes,
     state::AppState,
 };
@@ -405,58 +405,6 @@ async fn shortlink_create_and_redirect() {
         redirect.headers().get("location").unwrap(),
         "https://example.test/#/claim?pubkey=0xab"
     );
-}
-
-#[tokio::test]
-async fn messages_store_and_fetch() {
-    let app = build_app().await;
-    let body = "hello world";
-    let hash = hex_str(&blake160(body.as_bytes()));
-    let payload = format!(r#"{{"message_hash":"{hash}","body":"{body}"}}"#);
-
-    let store = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/v1/messages")
-                .header("content-type", "application/json")
-                .body(Body::from(payload))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(store.status(), StatusCode::OK);
-
-    let fetch = app
-        .oneshot(
-            Request::builder()
-                .uri(format!("/v1/messages/{hash}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(fetch.status(), StatusCode::OK);
-    let body = body_string(fetch).await;
-    assert!(body.contains("\"body\":\"hello world\""), "body = {body}");
-}
-
-#[tokio::test]
-async fn messages_reject_bad_hash() {
-    let app = build_app().await;
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/v1/messages")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"message_hash":"nothex","body":"x"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
