@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use axum::extract::FromRef;
 use sqlx::SqlitePool;
+use tokio::sync::Semaphore;
 
 use crate::{bus::EventBus, config::Config, rate_limit::RateLimit};
+
+pub const MAX_EVENT_STREAMS: usize = 1000;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -11,6 +14,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub bus: EventBus,
     pub rate_limit: RateLimit,
+    pub event_streams: Arc<Semaphore>,
 }
 
 impl AppState {
@@ -25,6 +29,7 @@ impl AppState {
             config: Arc::new(config),
             bus: EventBus::new(),
             rate_limit,
+            event_streams: Arc::new(Semaphore::new(MAX_EVENT_STREAMS)),
         }
     }
 }

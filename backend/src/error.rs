@@ -16,6 +16,8 @@ pub enum ApiError {
     Conflict(String),
     #[error("upstream failure: {0}")]
     Upstream(String),
+    #[error("{0}")]
+    Unavailable(String),
     #[error(transparent)]
     Database(#[from] sqlx::Error),
     #[error(transparent)]
@@ -35,6 +37,7 @@ impl ApiError {
             Self::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
             Self::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             Self::Upstream(_) => (StatusCode::BAD_GATEWAY, "upstream"),
+            Self::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
             Self::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "database"),
             Self::Other(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }

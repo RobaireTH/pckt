@@ -10,7 +10,7 @@ use pckt_backend::{
     config::{Config, Network, PacketLock},
     crypto::{blake160, hex_str, script_hash},
     db, routes,
-    state::AppState,
+    state::{AppState, MAX_EVENT_STREAMS},
 };
 use sqlx::sqlite::SqlitePoolOptions;
 use tower::ServiceExt;
@@ -637,4 +637,35 @@ async fn shortlink_rejects_non_positive_ttl() {
             .await,
         StatusCode::OK
     );
+}
+
+#[tokio::test]
+async fn event_stream_rejects_connections_over_the_cap() {
+    let state = build_state().await;
+    let held = state
+        .event_streams
+        .clone()
+        .acquire_many_owned(MAX_EVENT_STREAMS as u32)
+        .await
+        .unwrap();
+    let app = routes::router(&state).with_state(state.clone());
+
+    let request = || {
+        Request::builder()
+            .uri("/v1/events/stream")
+            .body(Body::empty())
+            .unwrap()
+    };
+    let rejected = app.clone().oneshot(request()).await.unwrap();
+    assert_eq!(rejected.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    drop(held);
+    let accepted = app.oneshot(request()).await.unwrap();
+    assert_eq!(accepted.status(), StatusCode::OK);
+    assert_eq!(
+        state.event_streams.available_permits(),
+        MAX_EVENT_STREAMS - 1
+    );
+    drop(accepted);
+    assert_eq!(state.event_streams.available_permits(), MAX_EVENT_STREAMS);
 }
