@@ -174,8 +174,6 @@ export async function buildAndRelayClaimTx(params: {
   const packetCell = await signer.client.getCellLive(op, true, true);
   if (!packetCell?.cellOutput) throw new Error('Packet cell not live');
   const pd = decodePacketData(packetCell.outputData);
-  const tip = await signer.client.getTipHeader();
-  const tipHash = tip.hash;
   const claimer = await signer.getRecommendedAddressObj();
   const claimerLockHash = claimer.script.hash();
   const inputCap = toBigInt(packetCell.cellOutput.capacity.toString());
@@ -206,7 +204,6 @@ export async function buildAndRelayClaimTx(params: {
           ? 0x4000000000000000n | toBigInt(pd.unlock_time)
           : 0,
     }],
-    headerDeps: [tipHash],
     outputs: [{ lock: claimer.script, capacity: payout }],
     outputsData: ['0x'],
   });
