@@ -23,6 +23,7 @@ const REORG_DEPTH: u64 = 50;
 const BACKOFF_MAX_SECS: u64 = 300;
 
 const BACKFILL_THRESHOLD: u64 = 1024;
+const CATCH_UP_BATCH: u64 = 1024;
 const BACKFILL_PAGE: u32 = 100;
 
 const SHANNONS_PER_BYTE: u64 = 100_000_000;
@@ -106,7 +107,8 @@ impl Indexer {
         let tip = self.rpc.tip_header().await?;
         let mut cursor = db::cursor::load(&self.state.db).await?;
 
-        if tip.number.saturating_sub(cursor) > BACKFILL_THRESHOLD {
+        let plan = plan_scan(cursor, tip.number);
+        if plan.backfill {
             info!(cursor, tip = tip.number, "starting bulk backfill");
             let inserted = self.backfill().await?;
             cursor = tip.number;
@@ -114,7 +116,7 @@ impl Indexer {
             info!(inserted, cursor, "bulk backfill complete");
         }
 
-        let target = (cursor + SCAN_BATCH).min(tip.number);
+        let target = plan.target;
 
         debug!(cursor, target, tip = tip.number, "scan window");
 
@@ -774,6 +776,30 @@ fn is_valid_seal(fresh: &NewPacket) -> bool {
                 .saturating_add(packet_floor(state.slots_total, state.message.len()))
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct ScanPlan {
+    backfill: bool,
+    target: u64,
+}
+
+fn plan_scan(cursor: u64, tip: u64) -> ScanPlan {
+    if cursor == 0 && tip > BACKFILL_THRESHOLD {
+        return ScanPlan {
+            backfill: true,
+            target: tip,
+        };
+    }
+    let batch = if tip.saturating_sub(cursor) > BACKFILL_THRESHOLD {
+        CATCH_UP_BATCH
+    } else {
+        SCAN_BATCH
+    };
+    ScanPlan {
+        backfill: false,
+        target: cursor.saturating_add(batch).min(tip),
+    }
+}
+
 fn claim_claimer_from_tx(tx: &Value) -> Option<String> {
     let witness = tx
         .get("witnesses")
@@ -805,4 +831,60 @@ fn publish(bus: &EventBus, msg: PacketEventMsg) {
 fn parse_hex_u64(s: &str) -> anyhow::Result<u64> {
     let s = s.strip_prefix("0x").unwrap_or(s);
     u64::from_str_radix(s, 16).context("parse hex u64")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{plan_scan, ScanPlan, CATCH_UP_BATCH, SCAN_BATCH};
+
+    #[test]
+    fn fresh_database_backfills_to_tip() {
+        assert_eq!(
+            plan_scan(0, 500_000),
+            ScanPlan {
+                backfill: true,
+                target: 500_000
+            }
+        );
+    }
+
+    #[test]
+    fn small_chain_is_scanned_from_genesis() {
+        assert_eq!(
+            plan_scan(0, 100),
+            ScanPlan {
+                backfill: false,
+                target: SCAN_BATCH
+            }
+        );
+    }
+
+    #[test]
+    fn long_downtime_scans_the_gap_instead_of_skipping_it() {
+        assert_eq!(
+            plan_scan(10_000, 50_000),
+            ScanPlan {
+                backfill: false,
+                target: 10_000 + CATCH_UP_BATCH
+            }
+        );
+    }
+
+    #[test]
+    fn normal_tick_scans_up_to_tip() {
+        assert_eq!(
+            plan_scan(10_000, 10_010),
+            ScanPlan {
+                backfill: false,
+                target: 10_010
+            }
+        );
+        assert_eq!(
+            plan_scan(10_000, 10_500),
+            ScanPlan {
+                backfill: false,
+                target: 10_000 + SCAN_BATCH
+            }
+        );
+    }
 }
