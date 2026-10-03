@@ -122,6 +122,14 @@ export function Claim({ onOpen, outPoint }: Props) {
       setClaimTxHash(result.txHash);
       setBadgeMinted(result.badgeMinted);
       setOpened(true);
+      if (claimPubkey) {
+        const { pathname, search } = window.location;
+        window.history.replaceState(
+          window.history.state,
+          '',
+          `${pathname}${search}#/claim?pubkey=${encodeURIComponent(claimPubkey)}`,
+        );
+      }
     } catch (e) {
       setError(friendlyError(e, 'claim'));
     } finally {
