@@ -5,7 +5,7 @@ mod messages;
 mod packets;
 mod prices;
 mod profiles;
-mod relay;
+pub(crate) mod relay;
 
 use axum::{
     middleware,

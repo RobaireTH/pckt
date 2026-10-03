@@ -102,7 +102,7 @@ fn classify_relay_error(msg: &str) -> ApiError {
     ApiError::Upstream(msg.into())
 }
 
-fn enforce_origin(headers: &HeaderMap, allowed: &[String]) -> ApiResult<()> {
+pub(crate) fn enforce_origin(headers: &HeaderMap, allowed: &[String]) -> ApiResult<()> {
     if allowed.iter().any(|s| s == "*") {
         return Ok(());
     }

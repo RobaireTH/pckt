@@ -378,7 +378,9 @@ async fn shortlink_create_and_redirect() {
                 .method("POST")
                 .uri("/v1/links")
                 .header("content-type", "application/json")
-                .body(Body::from(r#"{"full_url":"https://example.test/path"}"#))
+                .body(Body::from(
+                    r#"{"full_url":"https://example.test/#/claim?pubkey=0xab"}"#,
+                ))
                 .unwrap(),
         )
         .await
@@ -401,7 +403,7 @@ async fn shortlink_create_and_redirect() {
     assert_eq!(redirect.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         redirect.headers().get("location").unwrap(),
-        "https://example.test/path"
+        "https://example.test/#/claim?pubkey=0xab"
     );
 }
 
@@ -583,7 +585,9 @@ async fn rate_limit_returns_429_after_burst() {
             .uri("/v1/links")
             .header("content-type", "application/json")
             .header("x-forwarded-for", "192.0.2.1")
-            .body(Body::from(r#"{"full_url":"https://example.test/x"}"#))
+            .body(Body::from(
+                r#"{"full_url":"https://example.test/#/claim?pubkey=0xab"}"#,
+            ))
             .unwrap()
     };
 
@@ -593,4 +597,44 @@ async fn rate_limit_returns_429_after_burst() {
     assert_eq!(r2.status(), StatusCode::OK);
     let r3 = app.oneshot(make_req()).await.unwrap();
     assert_eq!(r3.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+async fn create_link(body: &'static str) -> StatusCode {
+    let app = build_app().await;
+    app.oneshot(
+        Request::builder()
+            .method("POST")
+            .uri("/v1/links")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap(),
+    )
+    .await
+    .unwrap()
+    .status()
+}
+
+#[tokio::test]
+async fn shortlink_rejects_non_claim_targets() {
+    for body in [
+        r#"{"full_url":"https://example.test/path"}"#,
+        r#"{"full_url":"https://example.test/#/app"}"#,
+        r#"{"full_url":"https://example.test/evil?x=1#/claim"}"#,
+        r#"{"full_url":"https://other.test/#/claim?pubkey=0xab"}"#,
+    ] {
+        assert_eq!(create_link(body).await, StatusCode::BAD_REQUEST, "{body}");
+    }
+}
+
+#[tokio::test]
+async fn shortlink_rejects_non_positive_ttl() {
+    assert_eq!(
+        create_link(r#"{"full_url":"https://example.test/#/claim?pubkey=0xab","ttl":-5}"#).await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        create_link(r#"{"full_url":"https://example.test/#/claim?pubkey=0xab","ttl":999999999}"#)
+            .await,
+        StatusCode::OK
+    );
 }
