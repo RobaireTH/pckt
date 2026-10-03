@@ -81,9 +81,26 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+const LIST_PAGE_SIZE = 100;
+const LIST_MAX_PAGES = 20;
+
+async function getAllPages<T>(path: string, params: Record<string, string>): Promise<T[]> {
+  const all: T[] = [];
+  for (let page = 0; page < LIST_MAX_PAGES; page++) {
+    const q = new URLSearchParams({
+      ...params,
+      limit: String(LIST_PAGE_SIZE),
+      offset: String(page * LIST_PAGE_SIZE),
+    });
+    const rows = await get<T[]>(`${path}?${q}`);
+    all.push(...rows);
+    if (rows.length < LIST_PAGE_SIZE) break;
+  }
+  return all;
+}
+
 export function fetchPackets(ownerLockHash?: string): Promise<PacketSummary[]> {
-  const q = ownerLockHash ? `?owner=${encodeURIComponent(ownerLockHash)}` : '';
-  return get(`/v1/packets${q}`);
+  return getAllPages('/v1/packets', ownerLockHash ? { owner: ownerLockHash } : {});
 }
 
 export function fetchPacket(outPoint: string): Promise<PacketSummary> {
@@ -99,7 +116,7 @@ export function fetchPacketByPubkey(hash: string): Promise<PacketSummary> {
 }
 
 export function fetchClaimedPackets(claimerLockHash: string): Promise<ClaimedPacket[]> {
-  return get(`/v1/packets/claimed?claimer=${encodeURIComponent(claimerLockHash)}`);
+  return getAllPages('/v1/packets/claimed', { claimer: claimerLockHash });
 }
 
 export function packetEventsUrl(walletLockHash?: string): string {
