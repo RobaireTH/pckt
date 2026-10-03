@@ -754,6 +754,98 @@ fn rejects_claim_with_non_empty_recipient_data() {
 }
 
 #[test]
+fn rejects_claim_with_typed_successor() {
+    let mut env = TestEnv::new();
+    let owner = env.always_script();
+    let owner_hash = script_hash_bytes(&owner);
+
+    let salt = [0x58u8; 16];
+    let (claim_secret, claim_pubkey) = claim_keypair([10u8; 32]);
+    let claimer_lock = env.always_script();
+    let claimer_hash = script_hash_bytes(&claimer_lock);
+    let successor_type = env.always_script();
+
+    let input_capacity = 100_000_000_000u64;
+    let payout = 10_000_000_000u64;
+    let pd = PdBuilder {
+        version: 1,
+        packet_type: 0,
+        slots_total: 5,
+        slots_claimed: 0,
+        expiry: 9_999_999_999,
+        unlock_time: 0,
+        initial_capacity: 50_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey,
+        salt,
+        ..Default::default()
+    }
+    .build();
+
+    let pckt = env.pckt_script(salt);
+    let previous_output = env.ctx.create_cell(
+        CellOutput::new_builder()
+            .capacity(input_capacity.pack())
+            .lock(pckt.clone())
+            .build(),
+        pd.as_bytes(),
+    );
+    let packet_input = CellInput::new_builder()
+        .previous_output(previous_output.clone())
+        .since(0u64.pack())
+        .build();
+
+    let next_claims = vec![claimer_hash];
+    let next_pd = PdBuilder {
+        version: 1,
+        packet_type: 0,
+        slots_total: 5,
+        slots_claimed: 1,
+        expiry: 9_999_999_999,
+        unlock_time: 0,
+        initial_capacity: 50_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey,
+        salt,
+        claimed_locks: next_claims,
+        ..Default::default()
+    }
+    .build();
+
+    let sig = sign_claim(previous_output.as_slice(), claimer_hash, &claim_secret);
+    let witness = claim_witness_bytes(sig, claimer_hash);
+    let tx = TransactionBuilder::default()
+        .input(packet_input)
+        .output(
+            CellOutput::new_builder()
+                .capacity(payout.pack())
+                .lock(claimer_lock)
+                .build(),
+        )
+        .output_data(Bytes::new().pack())
+        .output(
+            CellOutput::new_builder()
+                .capacity((input_capacity - payout).pack())
+                .lock(pckt)
+                .type_(Some(successor_type).pack())
+                .build(),
+        )
+        .output_data(Bytes::copy_from_slice(next_pd.as_slice()).pack())
+        .witness(witness.pack())
+        .build();
+    let tx = env.ctx.complete_tx(tx);
+    let err = env
+        .ctx
+        .verify_tx(&tx, MAX_CYCLES)
+        .expect_err("claim whose successor carries a type script must fail");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("76") || msg.contains("SuccessorHasType"),
+        "unexpected error: {msg}"
+    );
+}
+
+#[test]
 fn timed_claim_before_unlock_rejected() {
     let mut env = TestEnv::new();
     let owner = env.always_script();
