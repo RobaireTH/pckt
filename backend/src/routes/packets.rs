@@ -11,6 +11,7 @@ use crate::{
 };
 
 const LIST_LIMIT: i64 = 100;
+const MAX_LIST_OFFSET: i64 = 100_000;
 
 type SummaryRow = (
     String,
@@ -63,11 +64,31 @@ const SELECT_SUMMARY: &str = r#"
 #[derive(Deserialize)]
 pub struct ListQuery {
     pub owner: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 #[derive(Deserialize)]
 pub struct ClaimedQuery {
     pub claimer: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+fn page_bounds(limit: Option<i64>, offset: Option<i64>) -> ApiResult<(i64, i64)> {
+    let limit = limit.unwrap_or(LIST_LIMIT);
+    if !(1..=LIST_LIMIT).contains(&limit) {
+        return Err(ApiError::BadRequest(format!(
+            "limit must be between 1 and {LIST_LIMIT}"
+        )));
+    }
+    let offset = offset.unwrap_or(0);
+    if !(0..=MAX_LIST_OFFSET).contains(&offset) {
+        return Err(ApiError::BadRequest(format!(
+            "offset must be between 0 and {MAX_LIST_OFFSET}"
+        )));
+    }
+    Ok((limit, offset))
 }
 
 #[derive(Serialize)]
@@ -163,6 +184,7 @@ pub async fn list(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
 ) -> ApiResult<Json<Vec<PacketSummary>>> {
+    let (limit, offset) = page_bounds(q.limit, q.offset)?;
     let owner = q.owner.unwrap_or_default();
     let sql = r#"
         WITH latest AS (
@@ -184,12 +206,13 @@ pub async fn list(
           ON p.claim_pubkey_hash = l.claim_pubkey_hash
          AND p.last_seen_block = l.max_block
         WHERE (?1 = '' OR p.owner_lock_hash = ?1)
-        ORDER BY p.sealed_at DESC
-        LIMIT ?2
+        ORDER BY p.sealed_at DESC, p.out_point DESC
+        LIMIT ?2 OFFSET ?3
     "#;
     let rows: Vec<ListRow> = sqlx::query_as(sql)
         .bind(&owner)
-        .bind(LIST_LIMIT)
+        .bind(limit)
+        .bind(offset)
         .fetch_all(&state.db)
         .await?;
     Ok(Json(
@@ -220,6 +243,7 @@ pub async fn claimed(
     State(state): State<AppState>,
     Query(q): Query<ClaimedQuery>,
 ) -> ApiResult<Json<Vec<ClaimedPacket>>> {
+    let (limit, offset) = page_bounds(q.limit, q.offset)?;
     let claimer = q.claimer.unwrap_or_default();
     if claimer.is_empty() {
         return Ok(Json(Vec::new()));
@@ -246,12 +270,13 @@ pub async fn claimed(
         WHERE e.event_type = 'claim'
           AND e.claimer_lock_hash = ?1
         ORDER BY e.ts DESC, e.id DESC
-        LIMIT ?2
+        LIMIT ?2 OFFSET ?3
     "#;
 
     let rows: Vec<ClaimedRow> = sqlx::query_as(sql)
         .bind(&claimer)
-        .bind(LIST_LIMIT)
+        .bind(limit)
+        .bind(offset)
         .fetch_all(&state.db)
         .await?;
 

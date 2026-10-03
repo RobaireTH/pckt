@@ -617,3 +617,78 @@ async fn event_stream_rejects_connections_over_the_cap() {
     drop(accepted);
     assert_eq!(state.event_streams.available_permits(), MAX_EVENT_STREAMS);
 }
+
+async fn get_body(app: &Router, uri: &str) -> (StatusCode, String) {
+    let resp = app
+        .clone()
+        .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = resp.status();
+    (status, body_string(resp).await)
+}
+
+#[tokio::test]
+async fn packet_lists_page_past_the_first_hundred() {
+    let state = build_state().await;
+    for i in 0..150 {
+        sqlx::query(
+            r#"
+            INSERT INTO packets (
+                out_point, packet_type, slots_total, slots_claimed,
+                initial_capacity, current_capacity, expiry, unlock_time,
+                owner_lock_hash, claim_pubkey_hash, salt, message_hash,
+                message_body, sealed_at, last_seen_block
+            ) VALUES (?1, 0, 5, 1, '100', '90', 1000, 0, '0xowner', ?2, x'01', x'01', NULL, ?3, ?3)
+            "#,
+        )
+        .bind(format!("0x{i:04}:0"))
+        .bind(format!("0xpub-{i}"))
+        .bind(i as i64)
+        .execute(&state.db)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            INSERT INTO packet_events (
+                out_point, event_type, tx_hash, block_number, ts, claimer_lock_hash, slot_amount
+            ) VALUES (?1, 'claim', ?2, ?3, ?3, '0xclaimer', '10')
+            "#,
+        )
+        .bind(format!("0x{i:04}:0"))
+        .bind(format!("0xtx{i}"))
+        .bind(i as i64)
+        .execute(&state.db)
+        .await
+        .unwrap();
+    }
+    let app = routes::router(&state).with_state(state);
+
+    for base in [
+        "/v1/packets?owner=0xowner",
+        "/v1/packets/claimed?claimer=0xclaimer",
+    ] {
+        let (status, first) = get_body(&app, base).await;
+        assert_eq!(status, StatusCode::OK);
+        let first: Vec<serde_json::Value> = serde_json::from_str(&first).unwrap();
+        assert_eq!(first.len(), 100, "{base}");
+
+        let (status, second) = get_body(&app, &format!("{base}&offset=100")).await;
+        assert_eq!(status, StatusCode::OK);
+        let second: Vec<serde_json::Value> = serde_json::from_str(&second).unwrap();
+        assert_eq!(second.len(), 50, "{base}");
+        assert!(
+            second.iter().any(|p| p.to_string().contains("0x0000:0")),
+            "{base}"
+        );
+
+        let (_, small) = get_body(&app, &format!("{base}&limit=10&offset=145")).await;
+        let small: Vec<serde_json::Value> = serde_json::from_str(&small).unwrap();
+        assert_eq!(small.len(), 5, "{base}");
+
+        for bad in ["&limit=0", "&limit=101", "&offset=-1"] {
+            let (status, _) = get_body(&app, &format!("{base}{bad}")).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{base}{bad}");
+        }
+    }
+}
