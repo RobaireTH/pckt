@@ -136,7 +136,7 @@ export function packetFloor(slotsTotal: number, messageBody?: string | null): bi
   return (CELL_OVERHEAD_BYTES + pdSize) * SHANNONS_PER_BYTE;
 }
 
-export function predictClaimPayout(packet: PacketSummary): bigint {
+export function predictClaimPayout(packet: PacketSummary, claimerLockHash?: HexLike | null): bigint {
   const remaining = packet.slots_total - packet.slots_claimed;
   if (remaining <= 0) return 0n;
 
@@ -157,11 +157,14 @@ export function predictClaimPayout(packet: PacketSummary): bigint {
   const lower = MIN_SLOT_SHANNONS;
   const range = upper - lower;
   if (range <= 0n) return lower;
-  return lower + (slotSeed(packet.salt ?? '0x', packet.slots_claimed) % range);
+  if (!claimerLockHash) return avg > lower ? avg : lower;
+  return lower + (slotSeed(packet.salt ?? '0x', packet.slots_claimed, claimerLockHash) % range);
 }
 
-function slotSeed(salt: HexLike, slotIndex: number): bigint {
-  const digest = bytesFrom(hashCkb(bytesConcat(bytesFrom(salt), Uint8Array.from([slotIndex]))));
+function slotSeed(salt: HexLike, slotIndex: number, claimerLockHash: HexLike): bigint {
+  const digest = bytesFrom(
+    hashCkb(bytesConcat(bytesFrom(salt), Uint8Array.from([slotIndex]), bytesFrom(claimerLockHash))),
+  );
   let out = 0n;
   for (let i = 0; i < 8; i += 1) {
     out |= BigInt(digest[i] ?? 0) << BigInt(i * 8);

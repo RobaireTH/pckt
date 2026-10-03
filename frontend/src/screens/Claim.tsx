@@ -54,7 +54,6 @@ export function Claim({ onOpen, outPoint }: Props) {
       p => {
         if (!cancelled) {
           setPacket(p);
-          setPayout(predictClaimPayout(p));
         }
       },
       e => {
@@ -67,6 +66,10 @@ export function Claim({ onOpen, outPoint }: Props) {
       cancelled = true;
     };
   }, [outPoint, claimPubkey]);
+
+  useEffect(() => {
+    setPayout(packet ? predictClaimPayout(packet, lockHash) : null);
+  }, [packet, lockHash]);
 
   const from = packet ? ownerLabel(packet.owner_lock_hash, 'unknown', packet.owner_address, packet.owner_name, lockHash) : 'unknown';
   const message = packet?.message_body || 'A packet for you';

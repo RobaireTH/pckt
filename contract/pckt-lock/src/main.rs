@@ -90,7 +90,7 @@ fn claim_path(pd: &PacketData, claim: &Claim) -> Result<(), Error> {
     enforce_no_double_claim(pd, claim)?;
     enforce_claim_timing(pd)?;
     verify_claim_signature(pd, claim)?;
-    let payout = compute_payout(pd)?;
+    let payout = compute_payout(pd, claim.claimer_lock_hash().as_slice())?;
     verify_recipient(claim, payout)?;
     verify_successor(pd, claim, payout)?;
     Ok(())
@@ -220,7 +220,7 @@ fn max_floor(pd: &PacketData) -> u64 {
     (CELL_OVERHEAD_BYTES + pd_size) * SHANNONS_PER_BYTE
 }
 
-fn compute_payout(pd: &PacketData) -> Result<u64, Error> {
+fn compute_payout(pd: &PacketData, claimer_lock_hash: &[u8]) -> Result<u64, Error> {
     let total = byte_to_u8(pd.slots_total()) as u64;
     let claimed = byte_to_u8(pd.slots_claimed()) as u64;
     let pt = byte_to_u8(pd.packet_type());
@@ -247,7 +247,7 @@ fn compute_payout(pd: &PacketData) -> Result<u64, Error> {
         let avg = remaining_pool / remaining_slots;
         let upper = avg.saturating_mul(2).min(max_for_this);
         let lower = MIN_SLOT_SHANNONS;
-        let seed = slot_seed(pd.salt().as_slice(), claimed as u8);
+        let seed = slot_seed(pd.salt().as_slice(), claimed as u8, claimer_lock_hash);
         let range = upper.saturating_sub(lower);
         if range > 0 {
             (seed % range) + lower
@@ -259,10 +259,11 @@ fn compute_payout(pd: &PacketData) -> Result<u64, Error> {
     Ok(payout)
 }
 
-fn slot_seed(salt: &[u8], slot_idx: u8) -> u64 {
+fn slot_seed(salt: &[u8], slot_idx: u8, claimer_lock_hash: &[u8]) -> u64 {
     let mut hasher = Blake2bBuilder::new(32).personal(BLAKE_PERSONAL).build();
     hasher.update(salt);
     hasher.update(&[slot_idx]);
+    hasher.update(claimer_lock_hash);
     let mut out = [0u8; 32];
     hasher.finalize(&mut out);
     let mut u = [0u8; 8];
