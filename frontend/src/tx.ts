@@ -243,8 +243,6 @@ async function claimOnce(params: {
   const outPoint = resolved.outPoint;
   const op = parseOutPoint(outPoint);
   const pd = decodePacketData(packetCell.outputData);
-  const tip = await signer.client.getTipHeader();
-  const tipHash = tip.hash;
   const claimer = await signer.getRecommendedAddressObj();
   const claimerLockHash = claimer.script.hash();
   const inputCap = toBigInt(packetCell.cellOutput.capacity.toString());
@@ -275,7 +273,6 @@ async function claimOnce(params: {
           ? 0x4000000000000000n | toBigInt(pd.unlock_time)
           : 0,
     }],
-    headerDeps: [tipHash],
     outputs: [{ lock: claimer.script, capacity: payout }],
     outputsData: ['0x'],
   });
