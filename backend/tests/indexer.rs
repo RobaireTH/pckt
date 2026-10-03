@@ -320,3 +320,93 @@ fn packet_state_molecule_roundtrip() {
     assert_eq!(back.message, state.message);
     assert_eq!(back.claimed_locks, state.claimed_locks);
 }
+
+fn seal_block(
+    tx_hash: &str,
+    state: &PacketState,
+    args: &str,
+    capacity: u64,
+    typed: bool,
+) -> serde_json::Value {
+    let type_script = if typed {
+        json!({ "code_hash": "0x3333333333333333333333333333333333333333333333333333333333333333", "hash_type": "type", "args": "0x" })
+    } else {
+        serde_json::Value::Null
+    };
+    json!({
+        "header": {
+            "number": "0x2",
+            "hash": "0xblock2",
+            "parent_hash": "0xgenesis",
+            "timestamp": "0x65"
+        },
+        "transactions": [{
+            "hash": tx_hash,
+            "inputs": [],
+            "outputs": [{
+                "capacity": format!("0x{capacity:x}"),
+                "lock": { "code_hash": "0xpacket", "hash_type": "data1", "args": args },
+                "type": type_script
+            }],
+            "outputs_data": [hex_str(&state.encode().unwrap())],
+            "witnesses": []
+        }]
+    })
+}
+
+async fn sealed_count(state: &AppState) -> i64 {
+    let row: (i64,) = sqlx::query_as("SELECT count(*) FROM packets")
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    row.0
+}
+
+fn seal_capacity(state: &PacketState) -> u64 {
+    state.initial_capacity + indexer::packet_floor(state.slots_total, state.message.len())
+}
+
+#[tokio::test]
+async fn indexer_accepts_well_formed_seal() {
+    let app = make_state().await;
+    let indexer = Indexer::new(app.clone());
+    let packet = sample_state();
+    let args = hex_str(&blake160(&packet.claim_pubkey));
+    let block = seal_block("0xseal", &packet, &args, seal_capacity(&packet), false);
+    indexer.process_block_for_test(2, &block).await.unwrap();
+    assert_eq!(sealed_count(&app).await, 1);
+}
+
+#[tokio::test]
+async fn indexer_skips_spoofed_seals() {
+    let packet = sample_state();
+    let good_args = hex_str(&blake160(&packet.claim_pubkey));
+    let mut claimed = packet.clone();
+    claimed.slots_claimed = 5;
+    claimed.claimed_locks = vec![vec![0x99; 32]; 5];
+
+    let cases = vec![
+        (
+            "wrong lock args",
+            seal_block("0xa", &packet, "0x01", seal_capacity(&packet), false),
+        ),
+        (
+            "type script",
+            seal_block("0xb", &packet, &good_args, seal_capacity(&packet), true),
+        ),
+        (
+            "under capacity",
+            seal_block("0xc", &packet, &good_args, packet.initial_capacity, false),
+        ),
+        (
+            "already claimed",
+            seal_block("0xd", &claimed, &good_args, seal_capacity(&packet), false),
+        ),
+    ];
+    for (name, block) in cases {
+        let app = make_state().await;
+        let indexer = Indexer::new(app.clone());
+        indexer.process_block_for_test(2, &block).await.unwrap();
+        assert_eq!(sealed_count(&app).await, 0, "{name} must not be indexed");
+    }
+}
