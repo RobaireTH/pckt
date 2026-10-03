@@ -1,4 +1,5 @@
 import {
+  Cell,
   OutPoint,
   Script,
   Transaction,
@@ -171,15 +172,76 @@ export async function buildAndRelaySealTx(params: {
   return { txHash: tx_hash, claimLink, publicShortLink: short.short_url };
 }
 
+const CLAIM_ATTEMPTS = 3;
+const STALE_CELL_PATTERNS = [
+  /not live/i,
+  /\bdead\b/i,
+  /resolve failed/i,
+  /\bunknown\b.*out_?point/i,
+  /double.?spen/i,
+  /rbf/i,
+  /duplicated/i,
+];
+
+function isStaleCellError(e: unknown): boolean {
+  const text = e instanceof Error ? e.message : String(e);
+  return STALE_CELL_PATTERNS.some(re => re.test(text));
+}
+
+async function resolveLivePacketCell(signer: Signer, outPoint: string) {
+  const op = parseOutPoint(outPoint);
+  const direct = await signer.client.getCellLive(op, true, true);
+  if (direct?.cellOutput) return { cell: direct, outPoint };
+  const origin = await signer.client.getTransaction(op.txHash);
+  const lock = origin?.transaction.outputs[Number(op.index)]?.lock;
+  const originData = origin?.transaction.outputsData[Number(op.index)];
+  if (!lock || !originData) throw new Error('Packet cell not live');
+  const originPd = decodePacketData(originData);
+  let best: { cell: Cell; claimed: number } | null = null;
+  for await (const cell of signer.client.findCellsByLock(lock, null, true)) {
+    let pd: PacketData;
+    try {
+      pd = decodePacketData(cell.outputData);
+    } catch {
+      continue;
+    }
+    if (String(pd.salt) !== String(originPd.salt)) continue;
+    if (String(pd.owner_lock_hash) !== String(originPd.owner_lock_hash)) continue;
+    const claimed = Number(pd.slots_claimed);
+    if (!best || claimed > best.claimed) best = { cell, claimed };
+  }
+  if (!best) throw new Error('Packet cell not live');
+  const found = best.cell.outPoint;
+  return { cell: best.cell, outPoint: `${found.txHash}:${Number(found.index)}` };
+}
+
 export async function buildAndRelayClaimTx(params: {
   outPoint: string;
   signer: Signer;
   claimPrivateKey: string;
 }): Promise<{ txHash: string; payout: bigint; badgeMinted: boolean }> {
-  const { outPoint, signer, claimPrivateKey } = params;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt++) {
+    try {
+      return await claimOnce(params);
+    } catch (e) {
+      lastError = e;
+      if (!isStaleCellError(e)) throw e;
+    }
+  }
+  throw lastError;
+}
+
+async function claimOnce(params: {
+  outPoint: string;
+  signer: Signer;
+  claimPrivateKey: string;
+}): Promise<{ txHash: string; payout: bigint; badgeMinted: boolean }> {
+  const { signer, claimPrivateKey } = params;
+  const resolved = await resolveLivePacketCell(signer, params.outPoint);
+  const packetCell = resolved.cell;
+  const outPoint = resolved.outPoint;
   const op = parseOutPoint(outPoint);
-  const packetCell = await signer.client.getCellLive(op, true, true);
-  if (!packetCell?.cellOutput) throw new Error('Packet cell not live');
   const pd = decodePacketData(packetCell.outputData);
   const tip = await signer.client.getTipHeader();
   const tipHash = tip.hash;
