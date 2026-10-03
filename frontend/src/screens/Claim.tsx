@@ -91,6 +91,7 @@ export function Claim({ onOpen, outPoint }: Props) {
       ? expectedCkb.toLocaleString(undefined, { maximumFractionDigits: 4 })
       : String(totalCkb || '0');
   const targetOutPoint = outPoint || packet?.out_point || null;
+  const viewOnly = !outPoint && !claimSk && !!claimPubkey;
   const typeInfo = packet ? packetTypeInfo(packet.packet_type) : null;
 
   const claimNow = async () => {
@@ -193,6 +194,14 @@ export function Claim({ onOpen, outPoint }: Props) {
           <div style={{ marginBottom: 12 }}>
             <Alert tone="warning" title="Claim too small" message={claimCapacityError} />
           </div>
+        ) : viewOnly && !opened ? (
+          <div style={{ marginBottom: 12 }}>
+            <Alert
+              tone="info"
+              title="View only"
+              message="This link shows the packet but cannot open it. Ask the sender for the full claim link."
+            />
+          </div>
         ) : null}
         {!opened ? (
           <>
@@ -202,9 +211,9 @@ export function Claim({ onOpen, outPoint }: Props) {
               full
               icon="sparkle"
               onClick={claimNow}
-              disabled={claiming || loading || !!claimCapacityError}
+              disabled={claiming || loading || !!claimCapacityError || viewOnly}
             >
-              {claiming ? 'Claiming…' : 'Open packet'}
+              {claiming ? 'Claiming…' : viewOnly ? 'View only' : 'Open packet'}
             </Button>
             <div
               style={{
