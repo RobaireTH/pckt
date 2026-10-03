@@ -1286,3 +1286,96 @@ fn lucky_claim_rejects_salt_only_seed() {
         "expected RecipientMissing (70), got: {err}"
     );
 }
+
+fn verify_fixed_claim_with_recipient_capacity(
+    recipient_capacity: impl Fn(u64) -> u64,
+) -> Result<(), String> {
+    let mut env = TestEnv::new();
+    let owner = env.always_script();
+    let owner_hash = script_hash_bytes(&owner);
+    let salt = [0x71u8; 16];
+    let (claim_secret, claim_pubkey) = claim_keypair([12u8; 32]);
+    let claimer_lock = env.always_script();
+    let claimer_hash = script_hash_bytes(&claimer_lock);
+
+    let input_capacity = 100_000_000_000u64;
+    let payout = 10_000_000_000u64;
+    let base = PdBuilder {
+        slots_total: 5,
+        expiry: 9_999_999_999,
+        initial_capacity: 50_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey,
+        salt,
+        ..Default::default()
+    };
+    let pd = base.clone().build();
+    let next_pd = PdBuilder {
+        slots_claimed: 1,
+        claimed_locks: vec![claimer_hash],
+        ..base
+    }
+    .build();
+
+    let pckt = env.pckt_script(salt);
+    let previous_output = env.ctx.create_cell(
+        CellOutput::new_builder()
+            .capacity(input_capacity.pack())
+            .lock(pckt.clone())
+            .build(),
+        pd.as_bytes(),
+    );
+    let sig = sign_claim(previous_output.as_slice(), claimer_hash, &claim_secret);
+    let tx = TransactionBuilder::default()
+        .input(
+            CellInput::new_builder()
+                .previous_output(previous_output)
+                .since(0u64.pack())
+                .build(),
+        )
+        .output(
+            CellOutput::new_builder()
+                .capacity(recipient_capacity(payout).pack())
+                .lock(claimer_lock)
+                .build(),
+        )
+        .output_data(Bytes::new().pack())
+        .output(
+            CellOutput::new_builder()
+                .capacity((input_capacity - payout).pack())
+                .lock(pckt)
+                .build(),
+        )
+        .output_data(Bytes::copy_from_slice(next_pd.as_slice()).pack())
+        .witness(claim_witness_bytes(sig, claimer_hash).pack())
+        .build();
+    let tx = env.ctx.complete_tx(tx);
+    env.ctx
+        .verify_tx(&tx, MAX_CYCLES)
+        .map(|_| ())
+        .map_err(|e| format!("{e:?}"))
+}
+
+#[test]
+fn claim_may_pay_fee_from_payout() {
+    verify_fixed_claim_with_recipient_capacity(|payout| payout - 100_000)
+        .expect("claim paying a small fee out of the payout passes");
+    verify_fixed_claim_with_recipient_capacity(|payout| payout - 1_000_000)
+        .expect("claim paying the maximum fee out of the payout passes");
+}
+
+#[test]
+fn claim_rejects_fee_above_allowance() {
+    let err = verify_fixed_claim_with_recipient_capacity(|payout| payout - 1_000_001)
+        .expect_err("fee above the allowance must fail");
+    assert!(
+        err.contains("error code 70"),
+        "expected RecipientMissing (70), got: {err}"
+    );
+    let err = verify_fixed_claim_with_recipient_capacity(|payout| payout + 1)
+        .expect_err("recipient above payout must fail");
+    assert!(
+        err.contains("error code 70"),
+        "expected RecipientMissing (70), got: {err}"
+    );
+}
