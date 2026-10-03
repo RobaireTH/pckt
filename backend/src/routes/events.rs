@@ -9,7 +9,10 @@ use futures::stream::Stream;
 use serde::Deserialize;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 
-use crate::state::AppState;
+use crate::{
+    error::{ApiError, ApiResult},
+    state::AppState,
+};
 
 #[derive(Deserialize)]
 #[allow(dead_code)]
@@ -20,10 +23,16 @@ pub struct StreamQuery {
 pub async fn stream(
     State(state): State<AppState>,
     Query(q): Query<StreamQuery>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
+    let permit = state
+        .event_streams
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| ApiError::Unavailable("too many event streams".into()))?;
     let rx = state.bus.subscribe();
     let wallet = q.wallet;
     let stream = BroadcastStream::new(rx).filter_map(move |item| {
+        let _permit = &permit;
         let msg = item.ok()?;
         if let Some(filter) = &wallet {
             let owner_match = msg.owner_lock_hash.as_deref() == Some(filter.as_str());
@@ -36,5 +45,5 @@ pub async fn stream(
         Some(Ok(Event::default().event(&msg.event_type).data(payload)))
     });
 
-    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+    Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
