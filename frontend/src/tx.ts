@@ -23,10 +23,17 @@ import {
   maxFloor,
   type PacketData,
 } from './molecule';
-import { MAX_PACKET_SLOTS, MIN_PACKET_SLOTS, predictClaimPayout, toBigInt } from './packets';
+import {
+  MAX_PACKET_SLOTS,
+  MIN_PACKET_SLOTS,
+  predictClaimPayout,
+  recipientCellCapacity,
+  toBigInt,
+} from './packets';
 import type { Draft } from './screens/CreateAmount';
 
 const SHANNONS = 100_000_000n;
+const MAX_CLAIM_FEE_SHANNONS = 1_000_000n;
 
 function utf8Hex(s: string): Hex {
   return hexFrom(new TextEncoder().encode(s));
@@ -253,8 +260,22 @@ export async function buildAndRelayClaimTx(params: {
   const sig = secp256k1.sign(bytesFrom(msg), decodePk(claimPrivateKey));
   const sigHex = hexFrom(bytesConcat(sig.toCompactRawBytes(), Uint8Array.from([sig.recovery ?? 0])));
   tx.setWitnessArgsAt(0, WitnessArgs.from({ lock: encodeClaimWitness(sigHex, claimerLockHash) }));
-  await tx.completeFeeBy(signer);
 
+  const recipientIndex = remaining > 1 ? 1 : 0;
+  const fee = badge ? null : tx.estimateFee(await signer.client.getFeeRate());
+  const net = fee === null ? null : payout - fee;
+  if (
+    fee !== null &&
+    net !== null &&
+    fee <= MAX_CLAIM_FEE_SHANNONS &&
+    net >= recipientCellCapacity(claimer.script)
+  ) {
+    tx.outputs[recipientIndex].capacity = net;
+    const { tx_hash } = await relayTransaction(toRpcTransaction(tx));
+    return { txHash: tx_hash, payout: net, badgeMinted: false };
+  }
+
+  await tx.completeFeeBy(signer);
   const signed = await signer.signTransaction(tx);
   const signedJson = toRpcTransaction(signed);
   const { tx_hash } = await relayTransaction(signedJson);

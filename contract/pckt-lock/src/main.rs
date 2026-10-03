@@ -31,6 +31,7 @@ const PD_HEADER_BYTES: u64 = 52;
 const CELL_OVERHEAD_BYTES: u64 = 57;
 
 const MAX_RECLAIM_FEE_SHANNONS: u64 = 10_000_000;
+const MAX_CLAIM_FEE_SHANNONS: u64 = 1_000_000;
 
 #[repr(i8)]
 enum Error {
@@ -112,7 +113,7 @@ fn verify_recipient(claim: &Claim, payout: u64) -> Result<(), Error> {
             continue;
         }
         let cap = load_cell_capacity(idx, Source::Output).map_err(|_| Error::CapacityLoadFailed)?;
-        if cap != payout {
+        if cap > payout || cap < payout.saturating_sub(MAX_CLAIM_FEE_SHANNONS) {
             continue;
         }
         let type_opt =
