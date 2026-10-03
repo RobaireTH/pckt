@@ -1143,3 +1143,146 @@ fn rejects_double_claim_from_same_wallet() {
         "expected AlreadyClaimed (55), got: {msg}"
     );
 }
+
+const MIN_SLOT_SHANNONS: u64 = 6_300_000_000;
+
+fn max_floor(slots_total: u8, message_len: usize) -> u64 {
+    let max_locks = (slots_total as u64).saturating_sub(1);
+    let pd_size = 52 + 169 + (4 + message_len as u64) + (4 + max_locks * 32);
+    (57 + pd_size) * 100_000_000
+}
+
+fn lucky_seed(salt: &[u8], slot_idx: u8, claimer_lock_hash: Option<&[u8]>) -> u64 {
+    let mut hasher = Blake2bBuilder::new(32).personal(BLAKE_PERSONAL).build();
+    hasher.update(salt);
+    hasher.update(&[slot_idx]);
+    if let Some(h) = claimer_lock_hash {
+        hasher.update(h);
+    }
+    let mut out = [0u8; 32];
+    hasher.finalize(&mut out);
+    u64::from_le_bytes(out[..8].try_into().unwrap())
+}
+
+fn lucky_payout(input_capacity: u64, slots_total: u8, slots_claimed: u8, seed: u64) -> u64 {
+    let remaining = (slots_total - slots_claimed) as u64;
+    if remaining == 1 {
+        return input_capacity;
+    }
+    let pool = input_capacity - max_floor(slots_total, 0);
+    let max_for_this = pool.saturating_sub(MIN_SLOT_SHANNONS * (remaining - 1));
+    let upper = (pool / remaining).saturating_mul(2).min(max_for_this);
+    let range = upper.saturating_sub(MIN_SLOT_SHANNONS);
+    if range > 0 {
+        seed % range + MIN_SLOT_SHANNONS
+    } else {
+        MIN_SLOT_SHANNONS
+    }
+}
+
+fn verify_lucky_claim(
+    claimer_args: &[u8],
+    payout_for: impl Fn(&[u8], [u8; 32]) -> u64,
+) -> Result<(), String> {
+    let mut env = TestEnv::new();
+    let owner = env.always_script();
+    let owner_hash = script_hash_bytes(&owner);
+    let salt = [0x61u8; 16];
+    let (claim_secret, claim_pubkey) = claim_keypair([11u8; 32]);
+    let claimer_lock = env
+        .ctx
+        .build_script(&env.always_op, Bytes::copy_from_slice(claimer_args))
+        .unwrap();
+    let claimer_hash = script_hash_bytes(&claimer_lock);
+
+    let slots_total = 4u8;
+    let initial_capacity = 400_000_000_000u64;
+    let input_capacity = initial_capacity + max_floor(slots_total, 0);
+    let payout = payout_for(&salt, claimer_hash);
+    let base = PdBuilder {
+        packet_type: 1,
+        slots_total,
+        expiry: 9_999_999_999,
+        initial_capacity,
+        owner_lock_hash: owner_hash,
+        claim_pubkey,
+        salt,
+        ..Default::default()
+    };
+    let pd = base.clone().build();
+    let next_pd = PdBuilder {
+        slots_claimed: 1,
+        claimed_locks: vec![claimer_hash],
+        ..base
+    }
+    .build();
+
+    let pckt = env.pckt_script(salt);
+    let previous_output = env.ctx.create_cell(
+        CellOutput::new_builder()
+            .capacity(input_capacity.pack())
+            .lock(pckt.clone())
+            .build(),
+        pd.as_bytes(),
+    );
+    let sig = sign_claim(previous_output.as_slice(), claimer_hash, &claim_secret);
+    let tx = TransactionBuilder::default()
+        .input(
+            CellInput::new_builder()
+                .previous_output(previous_output)
+                .since(0u64.pack())
+                .build(),
+        )
+        .output(
+            CellOutput::new_builder()
+                .capacity(payout.pack())
+                .lock(claimer_lock)
+                .build(),
+        )
+        .output_data(Bytes::new().pack())
+        .output(
+            CellOutput::new_builder()
+                .capacity((input_capacity - payout).pack())
+                .lock(pckt)
+                .build(),
+        )
+        .output_data(Bytes::copy_from_slice(next_pd.as_slice()).pack())
+        .witness(claim_witness_bytes(sig, claimer_hash).pack())
+        .build();
+    let tx = env.ctx.complete_tx(tx);
+    env.ctx
+        .verify_tx(&tx, MAX_CYCLES)
+        .map(|_| ())
+        .map_err(|e| format!("{e:?}"))
+}
+
+#[test]
+fn lucky_claim_payout_depends_on_claimer() {
+    let with_claimer = |salt: &[u8], claimer: [u8; 32]| {
+        lucky_payout(
+            400_000_000_000 + max_floor(4, 0),
+            4,
+            0,
+            lucky_seed(salt, 0, Some(&claimer)),
+        )
+    };
+    verify_lucky_claim(b"alice", with_claimer).expect("lucky claim with claimer-mixed seed passes");
+    verify_lucky_claim(b"bob", with_claimer).expect("lucky claim for a second claimer passes");
+}
+
+#[test]
+fn lucky_claim_rejects_salt_only_seed() {
+    let salt_only = |salt: &[u8], _claimer: [u8; 32]| {
+        lucky_payout(
+            400_000_000_000 + max_floor(4, 0),
+            4,
+            0,
+            lucky_seed(salt, 0, None),
+        )
+    };
+    let err = verify_lucky_claim(b"alice", salt_only).expect_err("salt-only payout must fail");
+    assert!(
+        err.contains("error code 70"),
+        "expected RecipientMissing (70), got: {err}"
+    );
+}
