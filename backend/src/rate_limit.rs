@@ -86,17 +86,62 @@ fn client_ip(rl: &RateLimit, req: &Request) -> IpAddr {
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ConnectInfo(addr)| addr.ip());
     if rl.trust_forwarded_for {
-        if let Some(forwarded) = forwarded_for(req.headers()) {
+        if let Some(forwarded) = proxied_client_ip(req.headers()) {
             return forwarded;
         }
     }
     peer.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
 }
 
-fn forwarded_for(headers: &HeaderMap) -> Option<IpAddr> {
-    headers
-        .get("x-forwarded-for")
+pub fn proxied_client_ip(headers: &HeaderMap) -> Option<IpAddr> {
+    let fly = headers
+        .get("fly-client-ip")
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .and_then(|s| s.trim().parse().ok())
+        .and_then(|s| s.trim().parse().ok());
+    fly.or_else(|| {
+        headers
+            .get_all("x-forwarded-for")
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .flat_map(|s| s.split(','))
+            .last()
+            .and_then(|s| s.trim().parse().ok())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::proxied_client_ip;
+    use axum::http::{HeaderMap, HeaderValue};
+    use std::net::IpAddr;
+
+    fn ip(s: &str) -> IpAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn prefers_fly_client_ip() {
+        let mut h = HeaderMap::new();
+        h.insert("fly-client-ip", HeaderValue::from_static("203.0.113.7"));
+        h.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("198.51.100.1, 203.0.113.9"),
+        );
+        assert_eq!(proxied_client_ip(&h), Some(ip("203.0.113.7")));
+    }
+
+    #[test]
+    fn uses_last_forwarded_hop_not_the_client_supplied_first() {
+        let mut h = HeaderMap::new();
+        h.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("1.2.3.4, 203.0.113.9"),
+        );
+        assert_eq!(proxied_client_ip(&h), Some(ip("203.0.113.9")));
+    }
+
+    #[test]
+    fn none_without_proxy_headers() {
+        assert_eq!(proxied_client_ip(&HeaderMap::new()), None);
+    }
 }
