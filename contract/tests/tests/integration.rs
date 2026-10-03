@@ -247,7 +247,7 @@ fn reclaim_happy_path() {
             env.ctx.create_cell(
                 CellOutput::new_builder()
                     .capacity(10_000_000_000u64.pack())
-                    .lock(owner)
+                    .lock(owner.clone())
                     .build(),
                 Bytes::new(),
             ),
@@ -258,11 +258,103 @@ fn reclaim_happy_path() {
     let tx = TransactionBuilder::default()
         .input(packet_input)
         .input(owner_input)
+        .output(
+            CellOutput::new_builder()
+                .capacity((110_000_000_000u64 - 100_000).pack())
+                .lock(owner)
+                .build(),
+        )
+        .output_data(Bytes::new().pack())
         .witness(witness.pack())
         .witness(Bytes::new().pack())
         .build();
     let tx = env.ctx.complete_tx(tx);
     env.ctx.verify_tx(&tx, MAX_CYCLES).expect("reclaim passes");
+}
+
+#[test]
+fn reclaim_paying_someone_else_rejected() {
+    let mut env = TestEnv::new();
+    let owner = env.always_script();
+    let owner_hash = script_hash_bytes(&owner);
+
+    let salt = [0x43u8; 16];
+    let expiry = 1_700_000_000u64;
+    let pd = PdBuilder {
+        version: 1,
+        packet_type: 0,
+        slots_total: 5,
+        slots_claimed: 0,
+        expiry,
+        unlock_time: 0,
+        initial_capacity: 50_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey: [0u8; 33],
+        salt,
+        message: Vec::new(),
+        claimed_locks: Vec::new(),
+        ..Default::default()
+    }
+    .build();
+
+    let pckt = env.pckt_script(salt);
+    let packet_input = CellInput::new_builder()
+        .previous_output(
+            env.ctx.create_cell(
+                CellOutput::new_builder()
+                    .capacity(100_000_000_000u64.pack())
+                    .lock(pckt)
+                    .build(),
+                pd.as_bytes(),
+            ),
+        )
+        .since((SINCE_FLAG_ABS_TS | (expiry + 1)).pack())
+        .build();
+
+    let owner_input = CellInput::new_builder()
+        .previous_output(
+            env.ctx.create_cell(
+                CellOutput::new_builder()
+                    .capacity(10_000_000_000u64.pack())
+                    .lock(owner.clone())
+                    .build(),
+                Bytes::new(),
+            ),
+        )
+        .build();
+
+    let thief_lock = env
+        .ctx
+        .build_script(&env.always_op, Bytes::copy_from_slice(b"thief"))
+        .unwrap();
+    let witness = reclaim_witness_bytes();
+    let tx = TransactionBuilder::default()
+        .input(packet_input)
+        .input(owner_input)
+        .output(
+            CellOutput::new_builder()
+                .capacity(10_000_000_000u64.pack())
+                .lock(owner)
+                .build(),
+        )
+        .output_data(Bytes::new().pack())
+        .output(
+            CellOutput::new_builder()
+                .capacity((100_000_000_000u64 - 100_000).pack())
+                .lock(thief_lock)
+                .build(),
+        )
+        .output_data(Bytes::new().pack())
+        .witness(witness.pack())
+        .witness(Bytes::new().pack())
+        .build();
+    let tx = env.ctx.complete_tx(tx);
+    let err = env.ctx.verify_tx(&tx, MAX_CYCLES).unwrap_err();
+    let msg = format!("{err:?}");
+    assert!(
+        msg.contains("error code 83"),
+        "expected ReclaimNotPaidToOwner (83), got: {msg}"
+    );
 }
 
 #[test]
@@ -507,7 +599,7 @@ fn accepts_max_byte_sized_slot_count() {
             env.ctx.create_cell(
                 CellOutput::new_builder()
                     .capacity(10_000_000_000u64.pack())
-                    .lock(owner)
+                    .lock(owner.clone())
                     .build(),
                 Bytes::new(),
             ),
@@ -518,6 +610,13 @@ fn accepts_max_byte_sized_slot_count() {
     let tx = TransactionBuilder::default()
         .input(packet_input)
         .input(owner_input)
+        .output(
+            CellOutput::new_builder()
+                .capacity((310_000_000_000u64 - 100_000).pack())
+                .lock(owner)
+                .build(),
+        )
+        .output_data(Bytes::new().pack())
         .witness(witness.pack())
         .witness(Bytes::new().pack())
         .build();

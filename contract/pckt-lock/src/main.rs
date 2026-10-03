@@ -30,6 +30,8 @@ const PD_FIXED_BYTES: u64 = 169;
 const PD_HEADER_BYTES: u64 = 52;
 const CELL_OVERHEAD_BYTES: u64 = 57;
 
+const MAX_RECLAIM_FEE_SHANNONS: u64 = 10_000_000;
+
 #[repr(i8)]
 enum Error {
     NoInput = 10,
@@ -65,6 +67,7 @@ enum Error {
     ReclaimBeforeExpiry = 80,
     OwnerInputMissing = 81,
     ReclaimWithSuccessor = 82,
+    ReclaimNotPaidToOwner = 83,
 }
 
 pub fn program_entry() -> i8 {
@@ -290,18 +293,8 @@ fn reclaim_path(pd: &PacketData) -> Result<(), Error> {
 
     let owner = pd.owner_lock_hash();
     let owner_slice = owner.as_slice();
-    let mut found_owner = false;
-    for idx in 0.. {
-        let lh = match load_cell_lock_hash(idx, Source::Input) {
-            Ok(h) => h,
-            Err(_) => break,
-        };
-        if lh.as_ref() == owner_slice {
-            found_owner = true;
-            break;
-        }
-    }
-    if !found_owner {
+    let owner_in = sum_capacity_for_lock(Source::Input, owner_slice)?;
+    if owner_in.is_none() {
         return Err(Error::OwnerInputMissing);
     }
 
@@ -309,7 +302,32 @@ fn reclaim_path(pd: &PacketData) -> Result<(), Error> {
         return Err(Error::ReclaimWithSuccessor);
     }
 
+    let owner_in = owner_in.unwrap_or(0);
+    let owner_out = sum_capacity_for_lock(Source::Output, owner_slice)?.unwrap_or(0);
+    let packet_cap =
+        load_cell_capacity(0, Source::GroupInput).map_err(|_| Error::CapacityLoadFailed)?;
+    let required = (packet_cap as u128).saturating_sub(MAX_RECLAIM_FEE_SHANNONS as u128);
+    if owner_out.saturating_sub(owner_in) < required {
+        return Err(Error::ReclaimNotPaidToOwner);
+    }
+
     Ok(())
+}
+
+fn sum_capacity_for_lock(source: Source, lock_hash: &[u8]) -> Result<Option<u128>, Error> {
+    let mut total: Option<u128> = None;
+    for idx in 0.. {
+        let lh = match load_cell_lock_hash(idx, source) {
+            Ok(h) => h,
+            Err(_) => break,
+        };
+        if lh.as_ref() != lock_hash {
+            continue;
+        }
+        let cap = load_cell_capacity(idx, source).map_err(|_| Error::CapacityLoadFailed)?;
+        total = Some(total.unwrap_or(0) + cap as u128);
+    }
+    Ok(total)
 }
 
 fn enforce_slot_available(pd: &PacketData) -> Result<(), Error> {
