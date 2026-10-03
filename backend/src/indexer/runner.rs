@@ -8,7 +8,7 @@ use tracing::{debug, info, warn};
 use crate::{
     bus::{EventBus, PacketEventMsg},
     ckb::CkbRpc,
-    crypto::{decode_hex, hash_type_byte, hex_str, script_hash},
+    crypto::{blake160, decode_hex, hash_type_byte, hex_str, script_hash},
     db::{
         self,
         packets::{PacketRow, PacketSnapshot},
@@ -25,6 +25,11 @@ const BACKOFF_MAX_SECS: u64 = 300;
 const BACKFILL_THRESHOLD: u64 = 1024;
 const BACKFILL_PAGE: u32 = 100;
 
+const SHANNONS_PER_BYTE: u64 = 100_000_000;
+const PD_FIXED_BYTES: u64 = 169;
+const PD_HEADER_BYTES: u64 = 52;
+const CELL_OVERHEAD_BYTES: u64 = 57;
+
 pub struct Indexer {
     state: AppState,
     rpc: CkbRpc,
@@ -35,6 +40,8 @@ struct NewPacket {
     out_point: String,
     state: PacketState,
     capacity: u64,
+    args: Vec<u8>,
+    has_type: bool,
 }
 
 struct Predecessor {
@@ -189,6 +196,15 @@ impl Indexer {
         let bytes = decode_hex(raw).unwrap_or_default();
         let state =
             pckt_types::PacketState::decode(&bytes).context("decode packet state from backfill")?;
+        let args = cell
+            .pointer("/output/lock/args")
+            .and_then(Value::as_str)
+            .and_then(decode_hex)
+            .unwrap_or_default();
+        let has_type = cell.pointer("/output/type").is_some_and(|t| !t.is_null());
+        if !is_consistent_packet(&state, &args, has_type, capacity) {
+            anyhow::bail!("live cell {tx_hash}:{idx} is not a consistent packet");
+        }
         let out_point = format!("{tx_hash}:{idx}");
         db::packets::upsert(
             &self.state.db,
@@ -360,6 +376,10 @@ impl Indexer {
         }
 
         for fresh in new_packets {
+            if !is_valid_seal(&fresh) {
+                warn!(out_point = %fresh.out_point, "skipping packet cell that is not a valid seal");
+                continue;
+            }
             self.handle_seal(fresh, tx_hash, number, ts).await?;
         }
         Ok(())
@@ -438,10 +458,18 @@ impl Indexer {
                 .and_then(Value::as_str)
                 .and_then(|s| parse_hex_u64(s).ok())
                 .unwrap_or(0);
+            let args = lock
+                .get("args")
+                .and_then(Value::as_str)
+                .and_then(decode_hex)
+                .unwrap_or_default();
+            let has_type = output.get("type").is_some_and(|t| !t.is_null());
             out.push(NewPacket {
                 out_point: format!("{tx_hash}:{idx}"),
                 state,
                 capacity,
+                args,
+                has_type,
             });
         }
         out
@@ -711,6 +739,39 @@ impl Indexer {
         );
         Ok(())
     }
+}
+
+pub fn packet_floor(slots_total: u8, message_len: usize) -> u64 {
+    let max_locks = (slots_total as u64).saturating_sub(1);
+    let pd_size =
+        PD_HEADER_BYTES + PD_FIXED_BYTES + (4 + message_len as u64) + (4 + max_locks * 32);
+    (CELL_OVERHEAD_BYTES + pd_size) * SHANNONS_PER_BYTE
+}
+
+pub fn is_consistent_packet(
+    state: &PacketState,
+    args: &[u8],
+    has_type: bool,
+    capacity: u64,
+) -> bool {
+    state.version == 1
+        && !has_type
+        && state.slots_total > 0
+        && state.slots_claimed < state.slots_total
+        && state.claimed_locks.len() == state.slots_claimed as usize
+        && args == blake160(&state.claim_pubkey).as_slice()
+        && capacity >= packet_floor(state.slots_total, state.message.len())
+}
+
+fn is_valid_seal(fresh: &NewPacket) -> bool {
+    let state = &fresh.state;
+    is_consistent_packet(state, &fresh.args, fresh.has_type, fresh.capacity)
+        && state.slots_claimed == 0
+        && state.initial_capacity > 0
+        && fresh.capacity
+            >= state
+                .initial_capacity
+                .saturating_add(packet_floor(state.slots_total, state.message.len()))
 }
 
 fn claim_claimer_from_tx(tx: &Value) -> Option<String> {
