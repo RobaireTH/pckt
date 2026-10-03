@@ -2,6 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
     extract::{Path, State},
+    http::HeaderMap,
     response::Redirect,
     Json,
 };
@@ -10,11 +11,14 @@ use serde::{Deserialize, Serialize};
 use crate::{
     config::host_is_allowed,
     error::{ApiError, ApiResult},
+    routes::relay::enforce_origin,
     state::AppState,
 };
 
 const SLUG_ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyz23456789";
 const SLUG_LEN: usize = 8;
+const DEFAULT_TTL_SECS: i64 = 7 * 24 * 3600;
+const MAX_TTL_SECS: i64 = 30 * 24 * 3600;
 
 #[derive(Deserialize)]
 pub struct CreateLink {
@@ -30,8 +34,10 @@ pub struct CreatedLink {
 
 pub async fn create(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<CreateLink>,
 ) -> ApiResult<Json<CreatedLink>> {
+    enforce_origin(&headers, &state.config.allowed_origins)?;
     if body.full_url.len() > 2048 {
         return Err(ApiError::BadRequest("full_url too long".into()));
     }
@@ -50,8 +56,19 @@ pub async fn create(
         ));
     }
 
+    if !is_claim_target(&parsed) {
+        return Err(ApiError::BadRequest(
+            "full_url must point at a pckt claim page".into(),
+        ));
+    }
+    let ttl = match body.ttl {
+        None => DEFAULT_TTL_SECS,
+        Some(ttl) if ttl > 0 => ttl.min(MAX_TTL_SECS),
+        Some(_) => return Err(ApiError::BadRequest("ttl must be positive".into())),
+    };
+
     let now = unix_now();
-    let expires_at = body.ttl.map(|ttl| now + ttl);
+    let expires_at = Some(now + ttl);
 
     let slug = insert_with_retry(&state, &body.full_url, now, expires_at).await?;
 
@@ -106,6 +123,14 @@ pub async fn redirect(
         }
     }
     Ok(Redirect::to(&full_url))
+}
+
+fn is_claim_target(url: &url::Url) -> bool {
+    url.path() == "/"
+        && url.query().is_none()
+        && url
+            .fragment()
+            .is_some_and(|f| f == "/claim" || f.starts_with("/claim?") || f.starts_with("/claim/"))
 }
 
 fn unix_now() -> i64 {
