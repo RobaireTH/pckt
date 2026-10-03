@@ -37,7 +37,7 @@ pub async fn submit(
     let rpc = CkbRpc::new(state.config.ckb_rpc_url.clone());
     let tx_hash = rpc.send_transaction(body.signed_tx).await.map_err(|e| {
         tracing::error!(?e, "relay transaction failed");
-        classify_relay_error(&e.to_string())
+        classify_relay_error(&e.to_string(), &state.config.packet_lock.code_hash)
     })?;
     tracing::info!(tx_hash = %tx_hash, "relayed packet tx");
     Ok(Json(RelayResp { tx_hash }))
@@ -76,23 +76,43 @@ fn tx_references_packet_lock(signed_tx: &serde_json::Value, lock: &PacketLock) -
     false
 }
 
-fn classify_relay_error(msg: &str) -> ApiError {
-    if msg.contains("error code 55") {
-        return ApiError::Conflict("This wallet already claimed this packet.".into());
+fn packet_lock_error_code(msg: &str, code_hash: &str) -> Option<i64> {
+    let want = code_hash.trim_start_matches("0x").to_ascii_lowercase();
+    if want.is_empty() {
+        return None;
     }
-    if msg.contains("error code 54") {
-        return ApiError::Conflict("This packet has already been fully claimed.".into());
-    }
-    if msg.contains("error code 53") {
-        return ApiError::Conflict("This packet is still sealed and cannot be claimed yet.".into());
-    }
-    if msg.contains("error code 80") {
-        return ApiError::Conflict("This packet cannot be reclaimed until it expires.".into());
-    }
-    if msg.contains("error code 82") {
-        return ApiError::Conflict(
-            "This packet still has an active successor and cannot be reclaimed.".into(),
-        );
+    let lower = msg.to_ascii_lowercase();
+    let marker = format!("/{want}.html#");
+    let start = lower.find(&marker)? + marker.len();
+    let digits: String = lower[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-')
+        .collect();
+    digits.parse().ok()
+}
+
+fn classify_relay_error(msg: &str, packet_code_hash: &str) -> ApiError {
+    match packet_lock_error_code(msg, packet_code_hash) {
+        Some(55) => {
+            return ApiError::Conflict("This wallet already claimed this packet.".into());
+        }
+        Some(54) => {
+            return ApiError::Conflict("This packet has already been fully claimed.".into());
+        }
+        Some(53) => {
+            return ApiError::Conflict(
+                "This packet is still sealed and cannot be claimed yet.".into(),
+            );
+        }
+        Some(80) => {
+            return ApiError::Conflict("This packet cannot be reclaimed until it expires.".into());
+        }
+        Some(82) => {
+            return ApiError::Conflict(
+                "This packet still has an active successor and cannot be reclaimed.".into(),
+            );
+        }
+        _ => {}
     }
     if msg.contains("InsufficientCellCapacity") {
         return ApiError::BadRequest(
@@ -180,30 +200,52 @@ mod tests {
         assert!(!tx_references_packet_lock(&tx, &lock));
     }
 
-    #[test]
-    fn maps_already_claimed_to_conflict() {
-        let err = classify_relay_error("ckb rpc error: ... error code 55 ...");
+    const PACKET_HASH: &str = "0x5d70f3f6754486b9d666868455376931f2d6babb3593256a1fa2ab3218d7cbc1";
+
+    fn script_failure(code_hash: &str, code: i64) -> String {
+        let hash = code_hash.trim_start_matches("0x");
+        format!(
+            "ckb rpc send_transaction: TransactionFailedToVerify: Verification failed Script(TransactionScriptError {{ source: Inputs[0].Lock, cause: ValidationFailure: see error code {code} on page https://nervosnetwork.github.io/ckb-script-error-codes/by-data-hash/{hash}.html#{code} }})"
+        )
+    }
+
+    fn conflict_message(err: ApiError) -> String {
         match err {
-            ApiError::Conflict(msg) => assert!(msg.contains("already claimed")),
+            ApiError::Conflict(msg) => msg,
             other => panic!("expected conflict, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn maps_already_claimed_to_conflict() {
+        let err = classify_relay_error(&script_failure(PACKET_HASH, 55), PACKET_HASH);
+        assert!(conflict_message(err).contains("already claimed"));
     }
 
     #[test]
     fn maps_packet_full_to_conflict() {
-        let err = classify_relay_error("ckb rpc error: ... error code 54 ...");
-        match err {
-            ApiError::Conflict(msg) => assert!(msg.contains("fully claimed")),
-            other => panic!("expected conflict, got {other:?}"),
-        }
+        let err = classify_relay_error(&script_failure(PACKET_HASH, 54), PACKET_HASH);
+        assert!(conflict_message(err).contains("fully claimed"));
     }
 
     #[test]
     fn maps_reclaim_before_expiry_to_conflict() {
-        let err = classify_relay_error("ckb rpc error: ... error code 80 ...");
-        match err {
-            ApiError::Conflict(msg) => assert!(msg.contains("reclaimed until it expires")),
-            other => panic!("expected conflict, got {other:?}"),
+        let err = classify_relay_error(&script_failure(PACKET_HASH, 80), PACKET_HASH);
+        assert!(conflict_message(err).contains("reclaimed until it expires"));
+    }
+
+    #[test]
+    fn leaves_other_scripts_error_codes_alone() {
+        let other = "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8";
+        for code in [53, 54, 55, 80, 82] {
+            let err = classify_relay_error(&script_failure(other, code), PACKET_HASH);
+            assert!(matches!(err, ApiError::Upstream(_)), "code {code}");
         }
+    }
+
+    #[test]
+    fn ignores_codes_that_only_appear_in_free_text() {
+        let err = classify_relay_error("relay failed: error code 55", PACKET_HASH);
+        assert!(matches!(err, ApiError::Upstream(_)));
     }
 }
