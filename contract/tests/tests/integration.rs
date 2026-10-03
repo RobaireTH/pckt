@@ -952,3 +952,165 @@ fn rejects_double_claim_from_same_wallet() {
         "expected AlreadyClaimed (55), got: {msg}"
     );
 }
+
+struct ClaimCase {
+    slots_total: u8,
+    slots_claimed: u8,
+    input_capacity: u64,
+    recipient_capacity: u64,
+    successor_capacity: Option<u64>,
+    expiry: u64,
+}
+
+fn verify_fixed_claim(case: ClaimCase) -> Result<(), String> {
+    let mut env = TestEnv::new();
+    let owner = env.always_script();
+    let owner_hash = script_hash_bytes(&owner);
+    let salt = [0x81u8; 16];
+    let (claim_secret, claim_pubkey) = claim_keypair([13u8; 32]);
+    let claimer_lock = env
+        .ctx
+        .build_script(&env.always_op, Bytes::copy_from_slice(b"claimer"))
+        .unwrap();
+    let claimer_hash = script_hash_bytes(&claimer_lock);
+    let earlier: Vec<[u8; 32]> = (0..case.slots_claimed).map(|i| [i; 32]).collect();
+
+    let base = PdBuilder {
+        slots_total: case.slots_total,
+        slots_claimed: case.slots_claimed,
+        expiry: case.expiry,
+        initial_capacity: 50_000_000_000,
+        owner_lock_hash: owner_hash,
+        claim_pubkey,
+        salt,
+        claimed_locks: earlier.clone(),
+        ..Default::default()
+    };
+    let pd = base.clone().build();
+
+    let pckt = env.pckt_script(salt);
+    let previous_output = env.ctx.create_cell(
+        CellOutput::new_builder()
+            .capacity(case.input_capacity.pack())
+            .lock(pckt.clone())
+            .build(),
+        pd.as_bytes(),
+    );
+    let sig = sign_claim(previous_output.as_slice(), claimer_hash, &claim_secret);
+    let mut tx = TransactionBuilder::default()
+        .input(
+            CellInput::new_builder()
+                .previous_output(previous_output)
+                .since(0u64.pack())
+                .build(),
+        )
+        .output(
+            CellOutput::new_builder()
+                .capacity(case.recipient_capacity.pack())
+                .lock(claimer_lock)
+                .build(),
+        )
+        .output_data(Bytes::new().pack());
+    if let Some(succ_cap) = case.successor_capacity {
+        let mut locks = earlier;
+        locks.push(claimer_hash);
+        let next_pd = PdBuilder {
+            slots_claimed: case.slots_claimed + 1,
+            claimed_locks: locks,
+            ..base
+        }
+        .build();
+        tx = tx
+            .output(
+                CellOutput::new_builder()
+                    .capacity(succ_cap.pack())
+                    .lock(pckt)
+                    .build(),
+            )
+            .output_data(Bytes::copy_from_slice(next_pd.as_slice()).pack());
+    }
+    let tx = tx
+        .witness(claim_witness_bytes(sig, claimer_hash).pack())
+        .build();
+    let tx = env.ctx.complete_tx(tx);
+    env.ctx
+        .verify_tx(&tx, MAX_CYCLES)
+        .map(|_| ())
+        .map_err(|e| format!("{e:?}"))
+}
+
+#[test]
+fn fixed_claims_walk_every_slot_to_the_last() {
+    // 5 slots of 10 CKB each on top of a 50 CKB floor-sized remainder.
+    let payout = 10_000_000_000u64;
+    let mut capacity = 100_000_000_000u64;
+    for claimed in 0..4u8 {
+        verify_fixed_claim(ClaimCase {
+            slots_total: 5,
+            slots_claimed: claimed,
+            input_capacity: capacity,
+            recipient_capacity: payout,
+            successor_capacity: Some(capacity - payout),
+            expiry: 9_999_999_999,
+        })
+        .unwrap_or_else(|e| panic!("claim {claimed} failed: {e}"));
+        capacity -= payout;
+    }
+    verify_fixed_claim(ClaimCase {
+        slots_total: 5,
+        slots_claimed: 4,
+        input_capacity: capacity,
+        recipient_capacity: capacity,
+        successor_capacity: None,
+        expiry: 9_999_999_999,
+    })
+    .expect("last claim takes the whole remaining cell");
+}
+
+#[test]
+fn last_claim_rejects_successor_and_partial_payout() {
+    let err = verify_fixed_claim(ClaimCase {
+        slots_total: 5,
+        slots_claimed: 4,
+        input_capacity: 60_000_000_000,
+        recipient_capacity: 10_000_000_000,
+        successor_capacity: Some(50_000_000_000),
+        expiry: 9_999_999_999,
+    })
+    .expect_err("last claim must not leave a successor");
+    assert!(
+        err.contains("error code 70") || err.contains("error code 72"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn claim_rejects_successor_capacity_mismatch() {
+    let err = verify_fixed_claim(ClaimCase {
+        slots_total: 5,
+        slots_claimed: 1,
+        input_capacity: 90_000_000_000,
+        recipient_capacity: 10_000_000_000,
+        successor_capacity: Some(79_000_000_000),
+        expiry: 9_999_999_999,
+    })
+    .expect_err("successor must keep input minus payout");
+    assert!(
+        err.contains("error code 73"),
+        "expected SuccessorMismatch (73), got: {err}"
+    );
+}
+
+#[test]
+fn claim_after_expiry_is_still_accepted() {
+    // Expiry only gates the owner's reclaim; claims stay open until the cell is reclaimed.
+    verify_fixed_claim(ClaimCase {
+        slots_total: 5,
+        slots_claimed: 0,
+        input_capacity: 100_000_000_000,
+        recipient_capacity: 10_000_000_000,
+        successor_capacity: Some(90_000_000_000),
+        expiry: 1,
+    })
+    .expect("claim after expiry passes");
+}
