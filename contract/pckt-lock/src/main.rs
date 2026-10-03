@@ -61,6 +61,7 @@ enum Error {
     SuccessorMismatch = 73,
     SuccessorBadData = 74,
     RecipientHasData = 75,
+    SuccessorHasType = 76,
     ReclaimBeforeExpiry = 80,
     OwnerInputMissing = 81,
     ReclaimWithSuccessor = 82,
@@ -137,6 +138,11 @@ fn verify_successor(pd: &PacketData, claim: &Claim, payout: u64) -> Result<(), E
         return Ok(());
     }
     let succ_index = succ_index.ok_or(Error::SuccessorMissing)?;
+    let succ_type =
+        load_cell_type(succ_index, Source::Output).map_err(|_| Error::SuccessorMissing)?;
+    if succ_type.is_some() {
+        return Err(Error::SuccessorHasType);
+    }
     let succ_data =
         load_cell_data(succ_index, Source::Output).map_err(|_| Error::SuccessorMissing)?;
     let succ = PacketData::from_slice(&succ_data).map_err(|_| Error::SuccessorBadData)?;
