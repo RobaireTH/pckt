@@ -196,7 +196,7 @@ export async function buildAndRelayClaimTx(params: {
     claim_pubkey_hash: '',
     salt: String(pd.salt),
     message_body: new TextDecoder().decode(bytesFrom(pd.message)),
-  });
+  }, claimerLockHash);
 
   const tx = Transaction.from({
     inputs: [{
